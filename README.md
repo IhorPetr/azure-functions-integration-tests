@@ -1,4 +1,4 @@
-# AzureFunctions.Testing
+# AzureFunctions.IntegrationTests
 [![NuGet](https://img.shields.io/nuget/v/AzureFunctions.IntegrationTests.svg)](https://www.nuget.org/packages/AzureFunctions.IntegrationTests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
