@@ -47,7 +47,7 @@ public partial class Program {
 ### 1. Basic Usage
 
 ```csharp
-using AzureFunctions.Testing;
+using AzureFunctions.IntegrationTests;
 using Xunit;
 
 public class MyFunctionTests : IClassFixture<FunctionAppFactory<Program>>
