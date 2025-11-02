@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+	  <!-- NuGet Package Metadata -->
+	  <PackageId>AzureFunctions.IntegrationTests</PackageId>
+	  <Version>1.0.0</Version>
+	  <Authors>Joehom</Authors>
+	  <Company>Joehom</Company>
+	  <Description>Testing library for Azure Functions v4 (isolated worker process model). Provides a FunctionAppFactory similar to WebApplicationFactory for easy integration testing of Azure Functions.</Description>
+	  <PackageTags>azure-functions;testing;integration-tests;xunit</PackageTags>
+	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
+	  <RepositoryUrl>https://github.com/joehom0416/AzureFunctions.IntegrationTests</RepositoryUrl>
+	  <PackageProjectUrl>https://github.com/joehom0416/AzureFunctions.IntegrationTests</PackageProjectUrl>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
+	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+	
+	<ItemGroup>
+		<!-- Azure Functions Worker Dependencies -->
+		<PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.0.0" />
+		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.0.12" />
+
+		<!-- ASP.NET Core for IActionResult support -->
+		<PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5" />
+
+		<!-- Hosting -->
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+	</ItemGroup>
+
+</Project>
