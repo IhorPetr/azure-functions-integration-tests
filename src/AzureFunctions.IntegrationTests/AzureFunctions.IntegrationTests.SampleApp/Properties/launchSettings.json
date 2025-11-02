@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "AzureFunctions.IntegrationTests.SampleApp": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7003",
+      "launchBrowser": false
+    }
+  }
+}
