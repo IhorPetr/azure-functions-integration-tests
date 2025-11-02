@@ -1,6 +1,5 @@
 # AzureFunctions.Testing
-
-[![NuGet](https://img.shields.io/nuget/v/AzureFunctions.Testing.svg)](https://www.nuget.org/packages/AzureFunctions.IntegrationTests/)
+[![NuGet](https://img.shields.io/nuget/v/AzureFunctions.IntegrationTests.svg)](https://www.nuget.org/packages/AzureFunctions.IntegrationTests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A testing library for Azure Functions v4 (isolated worker process model) that provides a `FunctionAppFactory` similar to `WebApplicationFactory` in ASP.NET Core. This makes it easy to write integration tests for your Azure Functions without needing to start the actual Functions runtime.
