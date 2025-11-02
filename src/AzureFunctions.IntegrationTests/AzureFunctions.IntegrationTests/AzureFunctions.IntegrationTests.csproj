@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-
+	<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	  <!-- NuGet Package Metadata -->
 	  <PackageId>AzureFunctions.IntegrationTests</PackageId>
 	  <Version>1.0.0</Version>
