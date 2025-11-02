@@ -1,0 +1,54 @@
+name: Publish NuGet Package
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:  # Allows manual trigger
+    inputs:
+      version:
+        description: 'Package version (e.g., 1.0.0)'
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Extract version from tag
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        elif [[ $GITHUB_REF == refs/tags/v* ]]; then
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        else
+          echo "VERSION=1.0.0" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Restore dependencies
+      run: dotnet restore src/AzureFunctions.IntegrationTests/AzureFunctions.IntegrationTests/AzureFunctions.IntegrationTests.csproj
+
+    - name: Build
+      run: dotnet build src/AzureFunctions.IntegrationTests/AzureFunctions.IntegrationTests/AzureFunctions.IntegrationTests.csproj --configuration Release --no-restore
+
+    - name: Pack
+      run: dotnet pack src/AzureFunctions.IntegrationTests/AzureFunctions.IntegrationTests/AzureFunctions.IntegrationTests.csproj --configuration Release --no-build --output ./nupkg -p:PackageVersion=${{ steps.get_version.outputs.VERSION }}
+
+    - name: Publish to NuGet.org
+      run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+    - name: Upload NuGet package as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-package
+        path: ./nupkg/*.nupkg
