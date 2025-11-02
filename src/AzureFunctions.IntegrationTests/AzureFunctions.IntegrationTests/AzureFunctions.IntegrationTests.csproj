@@ -13,8 +13,8 @@
 	  <Description>Testing library for Azure Functions v4 (isolated worker process model). Provides a FunctionAppFactory similar to WebApplicationFactory for easy integration testing of Azure Functions.</Description>
 	  <PackageTags>azure-functions;testing;integration-tests;xunit</PackageTags>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
-	  <RepositoryUrl>https://github.com/joehom0416/AzureFunctions.IntegrationTests</RepositoryUrl>
-	  <PackageProjectUrl>https://github.com/joehom0416/AzureFunctions.IntegrationTests</PackageProjectUrl>
+	  <RepositoryUrl>https://github.com/joehom0416/azure-functions-integration-tests</RepositoryUrl>
+	  <PackageProjectUrl>https://github.com/joehom0416/azure-functions-integration-tests</PackageProjectUrl>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
 	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
