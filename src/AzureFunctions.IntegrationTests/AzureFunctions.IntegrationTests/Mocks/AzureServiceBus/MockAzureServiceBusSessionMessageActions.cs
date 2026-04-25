@@ -11,8 +11,8 @@ namespace AzureFunctions.IntegrationTests.Mocks.AzureServiceBus;
 /// <see cref="MockAzureServiceBusMessageActions"/>, not this class. Session-enabled functions
 /// typically receive BOTH a <see cref="ServiceBusMessageActions"/> and a
 /// <see cref="ServiceBusSessionMessageActions"/> parameter; use
-/// <see cref="AzureServiceBusDispatchResult.MessageActions"/> for settlement assertions and
-/// <see cref="AzureServiceBusDispatchResult.SessionMessageActions"/> for session state assertions.
+/// <see cref="AzureServiceBusExecutionResult.MessageActions"/> for settlement assertions and
+/// <see cref="AzureServiceBusExecutionResult.SessionMessageActions"/> for session state assertions.
 /// </para>
 /// </summary>
 public class MockAzureServiceBusSessionMessageActions : ServiceBusSessionMessageActions

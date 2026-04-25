@@ -51,7 +51,7 @@ public class FunctionAppFactoryTests : IClassFixture<FunctionAppFactory<Program>
     [Fact]
     public void Factory_ShouldCreateServiceBusDispatcher()
     {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
 
         Assert.NotNull(dispatcher);
     }

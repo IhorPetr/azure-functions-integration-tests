@@ -33,7 +33,7 @@ public class OrderAzureServiceBusFunctions
     /// <summary>
     /// Captures orders processed by <see cref="ProcessOrderFromEnvQueue"/>.
     /// Used to verify that Azure Service Bus queue names resolved from environment variables
-    /// (<c>%TestQueueName%</c> syntax) are correctly discovered and dispatched to.
+    /// (<c>%TestQueueName%</c> syntax) are correctly discovered and executed.
     /// </summary>
     public static readonly List<OrderCreatedEvent> EnvQueueProcessedOrders = new();
 

@@ -1,112 +1,112 @@
 namespace AzureFunctions.IntegrationTests.AzureServiceBus;
 
 /// <summary>
-/// Abstraction for dispatching messages to Azure Service Bus triggered Azure Functions
+/// Abstraction for executing Azure Service Bus triggered Azure Functions
 /// in-process during integration tests, without requiring a live Azure Service Bus namespace.
 /// </summary>
 /// <remarks>
 /// Obtain a concrete instance via
-/// <c>FunctionAppFactory&lt;TEntryPoint&gt;.CreateAzureServiceBusFunctionInvoker()</c>.
+/// <c>FunctionAppFactory&lt;TEntryPoint&gt;.CreateAzureServiceBusFunctionExecutor()</c>.
 /// The interface can be used in test helpers or custom factory wrappers so that the
-/// dispatcher can be substituted with a test double if needed.
+/// executor can be substituted with a test double if needed.
 /// </remarks>
-public interface IAzureServiceBusFunctionInvoker
+public interface IAzureServiceBusFunctionExecutor
 {
-    // ── Queue dispatch ───────────────────────────────────────────────────────
+    // ── Queue execution ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Dispatches a single typed message to the Azure Service Bus queue-triggered function
+    /// Executes a single typed message against the Azure Service Bus queue-triggered function
     /// registered for <paramref name="queueName"/>.
     /// </summary>
     /// <typeparam name="TMessage">The message payload type.</typeparam>
     /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
-    /// <param name="message">The message payload to serialize and dispatch.</param>
+    /// <param name="message">The message payload to serialize and pass to the function.</param>
     /// <param name="messageType">
     /// Optional subject / message-type discriminator written to
     /// <c>ServiceBusReceivedMessage.Subject</c>.
     /// </param>
     /// <param name="applicationProperties">Optional application properties to attach to the message.</param>
     /// <returns>
-    /// An <see cref="AzureServiceBusDispatchResult"/> containing the function's return value
+    /// An <see cref="AzureServiceBusExecutionResult"/> containing the function's return value
     /// (output binding) and the recorded message-settlement actions for assertion.
     /// </returns>
-    Task<AzureServiceBusDispatchResult> InvokeQueueAsync<TMessage>(
+    Task<AzureServiceBusExecutionResult> ExecuteQueueAsync<TMessage>(
         string queueName,
         TMessage message,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null);
 
     /// <summary>
-    /// Dispatches a single untyped message to the Azure Service Bus queue-triggered function
+    /// Executes a single untyped message against the Azure Service Bus queue-triggered function
     /// registered for <paramref name="queueName"/>.
     /// </summary>
     /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
-    /// <param name="message">The message payload to serialize and dispatch.</param>
+    /// <param name="message">The message payload to serialize and pass to the function.</param>
     /// <param name="messageType">
     /// Optional subject / message-type discriminator written to
     /// <c>ServiceBusReceivedMessage.Subject</c>.
     /// </param>
     /// <param name="applicationProperties">Optional application properties to attach to the message.</param>
     /// <returns>
-    /// An <see cref="AzureServiceBusDispatchResult"/> containing the function's return value
+    /// An <see cref="AzureServiceBusExecutionResult"/> containing the function's return value
     /// (output binding) and the recorded message-settlement actions for assertion.
     /// </returns>
-    Task<AzureServiceBusDispatchResult> InvokeQueueAsync(
+    Task<AzureServiceBusExecutionResult> ExecuteQueueAsync(
         string queueName,
         object? message,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null);
 
-    // ── Batched queue dispatch ───────────────────────────────────────────────
+    // ── Batched queue execution ───────────────────────────────────────────────
 
     /// <summary>
-    /// Dispatches a batch of typed messages to an Azure Service Bus queue-triggered function
+    /// Executes a batch of typed messages against an Azure Service Bus queue-triggered function
     /// configured with <c>IsBatched = true</c>.
     /// </summary>
     /// <typeparam name="TMessage">The message payload type.</typeparam>
     /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
-    /// <param name="messages">The batch of payloads to dispatch.</param>
+    /// <param name="messages">The batch of payloads to pass to the function.</param>
     /// <param name="messageType">Optional subject applied to every message in the batch.</param>
     /// <param name="applicationProperties">Optional application properties applied to every message.</param>
-    Task<AzureServiceBusDispatchResult> InvokeBatchQueueAsync<TMessage>(
+    Task<AzureServiceBusExecutionResult> ExecuteBatchQueueAsync<TMessage>(
         string queueName,
         IReadOnlyList<TMessage> messages,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null);
 
     /// <summary>
-    /// Dispatches a batch of untyped messages to an Azure Service Bus queue-triggered function
+    /// Executes a batch of untyped messages against an Azure Service Bus queue-triggered function
     /// configured with <c>IsBatched = true</c>.
     /// </summary>
     /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
-    /// <param name="messages">The batch of payloads to dispatch.</param>
+    /// <param name="messages">The batch of payloads to pass to the function.</param>
     /// <param name="messageType">Optional subject applied to every message in the batch.</param>
     /// <param name="applicationProperties">Optional application properties applied to every message.</param>
-    Task<AzureServiceBusDispatchResult> InvokeBatchQueueAsync(
+    Task<AzureServiceBusExecutionResult> ExecuteBatchQueueAsync(
         string queueName,
         IReadOnlyList<object?> messages,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null);
 
-    // ── Topic dispatch ───────────────────────────────────────────────────────
+    // ── Topic execution ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Dispatches a single typed message to Azure Service Bus topic-triggered functions
+    /// Executes a single typed message against Azure Service Bus topic-triggered functions
     /// bound to <paramref name="topicName"/>.
     /// </summary>
     /// <typeparam name="TMessage">The message payload type.</typeparam>
     /// <param name="topicName">Topic name configured on the trigger.</param>
-    /// <param name="message">The message payload to serialize and dispatch.</param>
+    /// <param name="message">The message payload to serialize and pass to the function.</param>
     /// <param name="subscriptionName">
     /// Optional subscription filter.
     /// <list type="bullet">
     ///   <item>
     ///     <term><see langword="null"/> (default)</term>
-    ///     <description>All functions bound to the topic are invoked regardless of subscription.</description>
+    ///     <description>All functions bound to the topic are executed regardless of subscription.</description>
     ///   </item>
     ///   <item>
     ///     <term>non-null</term>
-    ///     <description>Only the function matching the given subscription name is invoked.</description>
+    ///     <description>Only the function matching the given subscription name is executed.</description>
     ///   </item>
     /// </list>
     /// </param>
@@ -116,9 +116,9 @@ public interface IAzureServiceBusFunctionInvoker
     /// </param>
     /// <param name="applicationProperties">Optional application properties to attach to the message.</param>
     /// <returns>
-    /// An <see cref="AzureServiceBusDispatchResult"/> from the last matching subscription invoked.
+    /// An <see cref="AzureServiceBusExecutionResult"/> from the last matching subscription executed.
     /// </returns>
-    Task<AzureServiceBusDispatchResult> InvokeTopicAsync<TMessage>(
+    Task<AzureServiceBusExecutionResult> ExecuteTopicAsync<TMessage>(
         string topicName,
         TMessage message,
         string? subscriptionName = null,
@@ -126,21 +126,21 @@ public interface IAzureServiceBusFunctionInvoker
         IDictionary<string, object>? applicationProperties = null);
 
     /// <summary>
-    /// Dispatches a single untyped message to Azure Service Bus topic-triggered functions
+    /// Executes a single untyped message against Azure Service Bus topic-triggered functions
     /// bound to <paramref name="topicName"/>.
     /// </summary>
     /// <param name="topicName">Topic name configured on the trigger.</param>
-    /// <param name="message">The message payload to serialize and dispatch.</param>
+    /// <param name="message">The message payload to serialize and pass to the function.</param>
     /// <param name="subscriptionName">
     /// Optional subscription filter.
     /// <list type="bullet">
     ///   <item>
     ///     <term><see langword="null"/> (default)</term>
-    ///     <description>All functions bound to the topic are invoked regardless of subscription.</description>
+    ///     <description>All functions bound to the topic are executed regardless of subscription.</description>
     ///   </item>
     ///   <item>
     ///     <term>non-null</term>
-    ///     <description>Only the function matching the given subscription name is invoked.</description>
+    ///     <description>Only the function matching the given subscription name is executed.</description>
     ///   </item>
     /// </list>
     /// </param>
@@ -149,26 +149,26 @@ public interface IAzureServiceBusFunctionInvoker
     /// <c>ServiceBusReceivedMessage.Subject</c>.
     /// </param>
     /// <param name="applicationProperties">Optional application properties to attach to the message.</param>
-    Task<AzureServiceBusDispatchResult> InvokeTopicAsync(
+    Task<AzureServiceBusExecutionResult> ExecuteTopicAsync(
         string topicName,
         object? message,
         string? subscriptionName = null,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null);
 
-    // ── Batched topic dispatch ───────────────────────────────────────────────
+    // ── Batched topic execution ───────────────────────────────────────────────
 
     /// <summary>
-    /// Dispatches a batch of typed messages to an Azure Service Bus topic-triggered function
+    /// Executes a batch of typed messages against an Azure Service Bus topic-triggered function
     /// configured with <c>IsBatched = true</c>.
     /// </summary>
     /// <typeparam name="TMessage">The message payload type.</typeparam>
     /// <param name="topicName">Topic name configured on the trigger.</param>
-    /// <param name="messages">The batch of payloads to dispatch.</param>
+    /// <param name="messages">The batch of payloads to pass to the function.</param>
     /// <param name="subscriptionName">Optional subscription filter.</param>
     /// <param name="messageType">Optional subject applied to every message in the batch.</param>
     /// <param name="applicationProperties">Optional application properties applied to every message.</param>
-    Task<AzureServiceBusDispatchResult> InvokeBatchTopicAsync<TMessage>(
+    Task<AzureServiceBusExecutionResult> ExecuteBatchTopicAsync<TMessage>(
         string topicName,
         IReadOnlyList<TMessage> messages,
         string? subscriptionName = null,
@@ -176,15 +176,15 @@ public interface IAzureServiceBusFunctionInvoker
         IDictionary<string, object>? applicationProperties = null);
 
     /// <summary>
-    /// Dispatches a batch of untyped messages to an Azure Service Bus topic-triggered function
+    /// Executes a batch of untyped messages against an Azure Service Bus topic-triggered function
     /// configured with <c>IsBatched = true</c>.
     /// </summary>
     /// <param name="topicName">Topic name configured on the trigger.</param>
-    /// <param name="messages">The batch of payloads to dispatch.</param>
+    /// <param name="messages">The batch of payloads to pass to the function.</param>
     /// <param name="subscriptionName">Optional subscription filter.</param>
     /// <param name="messageType">Optional subject applied to every message in the batch.</param>
     /// <param name="applicationProperties">Optional application properties applied to every message.</param>
-    Task<AzureServiceBusDispatchResult> InvokeBatchTopicAsync(
+    Task<AzureServiceBusExecutionResult> ExecuteBatchTopicAsync(
         string topicName,
         IReadOnlyList<object?> messages,
         string? subscriptionName = null,

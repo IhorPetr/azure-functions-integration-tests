@@ -13,7 +13,7 @@ A testing library for Azure Functions v4 (isolated worker process model) that pr
 - 📝 **Route parameter support** - Handles complex routes with parameters like `{id}`, `{email}`, etc.
 - ⚙️ **Customizable** - Virtual methods to override host configuration
 - 🔄 **HttpClient integration** - Use familiar HttpClient for testing
-- 📨 **Azure Service Bus testing** - Dispatch messages to queue/topic-triggered functions without a real Service Bus namespace
+- 📨 **Azure Service Bus testing** - Execute queue/topic-triggered functions without a real Service Bus namespace
 
 ## Installation
 
@@ -288,10 +288,10 @@ public async Task GetOrder_WithRouteParameters_ReturnsOk()
 
 ## Azure Service Bus Testing
 
-Use `CreateAzureServiceBusDispatcher()` to dispatch messages directly to Service Bus triggered functions
-without connecting to a real Azure Service Bus namespace.
+Use `CreateAzureServiceBusFunctionExecutor()` to execute Azure Service Bus triggered functions
+directly in-process without connecting to a real Azure Service Bus namespace.
 
-### Queue dispatch
+### Queue execution
 
 ```csharp
 public class OrderFunctionTests : IClassFixture<FunctionAppFactory<Program>>
@@ -303,23 +303,23 @@ public class OrderFunctionTests : IClassFixture<FunctionAppFactory<Program>>
     [Fact]
     public async Task ProcessOrder_QueueTrigger_StoresOrder()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
 
-        await dispatcher.DispatchToQueueAsync("orders", new OrderCreatedEvent { OrderId = 1 });
+        await executor.ExecuteQueueAsync("orders", new OrderCreatedEvent { OrderId = 1 });
 
         Assert.Single(OrderFunctions.ProcessedOrders);
     }
 }
 ```
 
-### Topic / subscription dispatch
+### Topic / subscription execution
 
 ```csharp
-// Invoke ALL subscriptions registered for the topic
-await dispatcher.DispatchToTopicAsync("events", new { EventId = 1 }, messageType: "OrderShipped");
+// Execute ALL subscriptions registered for the topic
+await executor.ExecuteTopicAsync("events", new { EventId = 1 }, messageType: "OrderShipped");
 
-// Invoke only a specific subscription
-await dispatcher.DispatchToTopicAsync("events", new { EventId = 2 },
+// Execute only a specific subscription
+await executor.ExecuteTopicAsync("events", new { EventId = 2 },
     subscriptionName: "analytics-sub", messageType: "OrderUpdated");
 ```
 
@@ -327,7 +327,7 @@ await dispatcher.DispatchToTopicAsync("events", new { EventId = 2 },
 
 ```csharp
 var orders = new[] { new OrderCreatedEvent { OrderId = 1 }, new OrderCreatedEvent { OrderId = 2 } };
-var result = await dispatcher.DispatchBatchToQueueAsync("batch-orders", orders);
+var result = await executor.ExecuteBatchQueueAsync("batch-orders", orders);
 
 Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
 ```
@@ -335,7 +335,7 @@ Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
 ### Session-enabled queue
 
 ```csharp
-var result = await dispatcher.DispatchToQueueAsync("session-orders", order);
+var result = await executor.ExecuteQueueAsync("session-orders", order);
 
 Assert.NotNull(result.SessionMessageActions);
 Assert.Equal("42", result.SessionMessageActions.SessionState!.ToString());
@@ -344,7 +344,7 @@ Assert.Single(result.MessageActions.CompletedMessages);
 
 ### Asserting message settlement
 
-The `AzureServiceBusDispatchResult` returned by every dispatch method exposes:
+The `AzureServiceBusExecutionResult` returned by every execution method exposes:
 
 | Property | Description |
 |---|---|
@@ -354,13 +354,13 @@ The `AzureServiceBusDispatchResult` returned by every dispatch method exposes:
 
 ```csharp
 // Check dead-letter
-var result = await dispatcher.DispatchToQueueAsync("orders-manual", invalidOrder);
+var result = await executor.ExecuteQueueAsync("orders-manual", invalidOrder);
 Assert.Single(result.MessageActions.DeadLetteredMessages);
 var (_, reason, description, _) = result.MessageActions.DeadLetteredMessages[0];
 Assert.Equal("InvalidOrder", reason);
 
 // Check return value (output binding)
-var result = await dispatcher.DispatchToQueueAsync("forward-orders", order);
+var result = await executor.ExecuteQueueAsync("forward-orders", order);
 var forwarded = Assert.IsType<OrderForwardedEvent>(result.ReturnValue);
 Assert.Equal(order.OrderId, forwarded.OriginalOrderId);
 ```
@@ -369,7 +369,7 @@ Assert.Equal(order.OrderId, forwarded.OriginalOrderId);
 
 - Does not test the actual HTTP binding (e.g., authentication middleware at the HTTP level)
 - Timer, Blob, Event Hub, and other non-HTTP / non-Service-Bus trigger types are not yet supported
-- `DispatchBatchToTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
+- `ExecuteBatchTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
 
 ## Example Project Structure
 
