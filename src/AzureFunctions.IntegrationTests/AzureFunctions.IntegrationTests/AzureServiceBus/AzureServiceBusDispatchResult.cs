@@ -3,7 +3,7 @@ using AzureFunctions.IntegrationTests.Mocks.AzureServiceBus;
 namespace AzureFunctions.IntegrationTests.AzureServiceBus;
 
 /// <summary>
-/// The result of an Azure Service Bus function dispatch via <see cref="AzureServiceBusDispatcher"/>.
+/// The result of an Azure Service Bus function dispatch via <see cref="AzureServiceBusFunctionInvoker"/>.
 /// Provides access to the function's return value (output binding) and the recorded
 /// message actions so tests can assert settlement calls.
 /// </summary>

@@ -5,7 +5,7 @@ using AzureFunctions.IntegrationTests.Mocks.AzureServiceBus;
 namespace AzureFunctions.IntegrationTests.SampleApp.Tests;
 
 /// <summary>
-/// Integration tests for <see cref="AzureServiceBusDispatcher"/>.
+/// Integration tests for <see cref="AzureServiceBusFunctionInvoker"/>.
 /// Covers queue dispatch, topic dispatch, session-enabled queues, batched queues,
 /// return-value / output bindings, and manual message settlement (Complete / DeadLetter / Abandon / Defer).
 /// Functions are invoked in-process without a real Azure Service Bus connection.
@@ -35,18 +35,18 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public void CreateServiceBusDispatcher_ShouldReturnDispatcher()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
         Assert.NotNull(dispatcher);
     }
 
     [Fact]
-    public async Task DispatchToQueueAsync_TypedMessage_ShouldInvokeTriggerFunction()
+    public async Task InvokeQueueAsync_TypedMessage_ShouldInvokeTriggerFunction()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var order = new OrderCreatedEvent { OrderId = 42, CustomerName = "Alice", TotalAmount = 99.99m };
 
-        await dispatcher.DispatchToQueueAsync("orders", order);
+        await dispatcher.InvokeQueueAsync("orders", order);
 
         Assert.Single(OrderAzureServiceBusFunctions.ProcessedOrders);
         Assert.Equal(42, OrderAzureServiceBusFunctions.ProcessedOrders[0].OrderId);
@@ -55,22 +55,22 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     [Fact]
-    public async Task DispatchToQueueAsync_WithMessageType_ShouldSetSubjectOnMessage()
+    public async Task InvokeQueueAsync_WithMessageType_ShouldSetSubjectOnMessage()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
-        await dispatcher.DispatchToQueueAsync("orders", new OrderCreatedEvent { OrderId = 1 }, messageType: "OrderCreated");
+        await dispatcher.InvokeQueueAsync("orders", new OrderCreatedEvent { OrderId = 1 }, messageType: "OrderCreated");
 
         Assert.Single(OrderAzureServiceBusFunctions.ProcessedOrders);
     }
 
     [Fact]
-    public async Task DispatchToQueueAsync_MultipleMessages_ShouldInvokeFunctionForEach()
+    public async Task InvokeQueueAsync_MultipleMessages_ShouldInvokeFunctionForEach()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
-        await dispatcher.DispatchToQueueAsync("orders", new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob" });
-        await dispatcher.DispatchToQueueAsync("orders", new OrderCreatedEvent { OrderId = 2, CustomerName = "Carol" });
+        await dispatcher.InvokeQueueAsync("orders", new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob" });
+        await dispatcher.InvokeQueueAsync("orders", new OrderCreatedEvent { OrderId = 2, CustomerName = "Carol" });
 
         Assert.Equal(2, OrderAzureServiceBusFunctions.ProcessedOrders.Count);
         Assert.Equal(1, OrderAzureServiceBusFunctions.ProcessedOrders[0].OrderId);
@@ -78,12 +78,12 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     [Fact]
-    public async Task DispatchToQueueAsync_WithApplicationProperties_ShouldInvokeFunction()
+    public async Task InvokeQueueAsync_WithApplicationProperties_ShouldInvokeFunction()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var props = new Dictionary<string, object> { ["correlationId"] = "abc-123" };
 
-        await dispatcher.DispatchToQueueAsync("orders", new OrderCreatedEvent { OrderId = 7 },
+        await dispatcher.InvokeQueueAsync("orders", new OrderCreatedEvent { OrderId = 7 },
             applicationProperties: props);
 
         Assert.Single(OrderAzureServiceBusFunctions.ProcessedOrders);
@@ -91,22 +91,22 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     [Fact]
-    public async Task DispatchToQueueAsync_UnknownQueue_ShouldThrow()
+    public async Task InvokeQueueAsync_UnknownQueue_ShouldThrow()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.DispatchToQueueAsync("unknown-queue", new { }));
+            () => dispatcher.InvokeQueueAsync("unknown-queue", new { }));
     }
 
     // ── Topic dispatch ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task DispatchToTopicAsync_NoSubscriptionFilter_ShouldInvokeAllSubscriptions()
+    public async Task InvokeTopicAsync_NoSubscriptionFilter_ShouldInvokeAllSubscriptions()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
-        await dispatcher.DispatchToTopicAsync("events", new { EventId = 1 }, messageType: "OrderShipped");
+        await dispatcher.InvokeTopicAsync("events", new { EventId = 1 }, messageType: "OrderShipped");
 
         Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
         Assert.Equal("OrderShipped", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
@@ -115,11 +115,11 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     [Fact]
-    public async Task DispatchToTopicAsync_SpecificSubscription_ShouldInvokeOnlyThatSubscription()
+    public async Task InvokeTopicAsync_SpecificSubscription_ShouldInvokeOnlyThatSubscription()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
-        await dispatcher.DispatchToTopicAsync("events", new { EventId = 2 },
+        await dispatcher.InvokeTopicAsync("events", new { EventId = 2 },
             subscriptionName: "integration-tests-sub",
             messageType: "OrderCancelled");
 
@@ -129,11 +129,11 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     [Fact]
-    public async Task DispatchToTopicAsync_SpecificAnalyticsSubscription_ShouldInvokeOnlyAnalytics()
+    public async Task InvokeTopicAsync_SpecificAnalyticsSubscription_ShouldInvokeOnlyAnalytics()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
-        await dispatcher.DispatchToTopicAsync("events", new { EventId = 3 },
+        await dispatcher.InvokeTopicAsync("events", new { EventId = 3 },
             subscriptionName: "analytics-sub",
             messageType: "OrderUpdated");
 
@@ -143,21 +143,21 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     [Fact]
-    public async Task DispatchToTopicAsync_UnknownTopic_ShouldThrow()
+    public async Task InvokeTopicAsync_UnknownTopic_ShouldThrow()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.DispatchToTopicAsync("unknown-topic", new { }));
+            () => dispatcher.InvokeTopicAsync("unknown-topic", new { }));
     }
 
     [Fact]
-    public async Task DispatchToTopicAsync_UnknownSubscription_ShouldThrow()
+    public async Task InvokeTopicAsync_UnknownSubscription_ShouldThrow()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.DispatchToTopicAsync("events", new { }, subscriptionName: "nonexistent-sub"));
+            () => dispatcher.InvokeTopicAsync("events", new { }, subscriptionName: "nonexistent-sub"));
     }
     
        // ── Session-enabled queue ─────────────────────────────────────────────────
@@ -168,11 +168,11 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.SessionProcessedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var order = new OrderCreatedEvent { OrderId = 42, CustomerName = "Alice", TotalAmount = 99.99m };
 
         // Act
-        var result = await dispatcher.DispatchToQueueAsync("session-orders", order);
+        var result = await dispatcher.InvokeQueueAsync("session-orders", order);
 
         // Assert — function executed
         Assert.Single(OrderAzureServiceBusFunctions.SessionProcessedOrders);
@@ -190,10 +190,10 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public async Task SessionQueue_IsSessionsEnabled_DetectedCorrectly()
     {
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var order = new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob", TotalAmount = 10m };
 
-        var result = await dispatcher.DispatchToQueueAsync("session-orders", order);
+        var result = await dispatcher.InvokeQueueAsync("session-orders", order);
 
         // SessionMessageActions must be a non-null MockAzureServiceBusSessionMessageActions
         Assert.NotNull(result.SessionMessageActions);
@@ -207,7 +207,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var orders = new[]
         {
             new OrderCreatedEvent { OrderId = 1, CustomerName = "Carol", TotalAmount = 10m },
@@ -216,7 +216,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         };
 
         // Act
-        var result = await dispatcher.DispatchBatchToQueueAsync("batch-orders", orders);
+        var result = await dispatcher.InvokeBatchQueueAsync("batch-orders", orders);
 
         // Assert — function received the full batch
         Assert.Equal(3, OrderAzureServiceBusFunctions.BatchReceivedMessages.Count);
@@ -233,10 +233,10 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     {
         OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var orders = new[] { new OrderCreatedEvent { OrderId = 99, CustomerName = "Frank", TotalAmount = 5m } };
 
-        var result = await dispatcher.DispatchBatchToQueueAsync("batch-orders", orders);
+        var result = await dispatcher.InvokeBatchQueueAsync("batch-orders", orders);
 
         Assert.Single(OrderAzureServiceBusFunctions.BatchReceivedMessages);
         Assert.Single(result.MessageActions.CompletedMessages);
@@ -250,11 +250,11 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.ForwardedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var order = new OrderCreatedEvent { OrderId = 7, CustomerName = "Grace", TotalAmount = 55m };
 
         // Act
-        var result = await dispatcher.DispatchToQueueAsync("forward-orders", order);
+        var result = await dispatcher.InvokeQueueAsync("forward-orders", order);
 
         // Assert — function captured the order
         Assert.Single(OrderAzureServiceBusFunctions.ForwardedOrders);
@@ -275,11 +275,11 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.ActionProcessedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         var order = new OrderCreatedEvent { OrderId = 10, CustomerName = "Henry", TotalAmount = 100m };
 
         // Act
-        var result = await dispatcher.DispatchToQueueAsync("orders-manual", order);
+        var result = await dispatcher.InvokeQueueAsync("orders-manual", order);
 
         // Assert — function processed the order
         Assert.Single(OrderAzureServiceBusFunctions.ActionProcessedOrders);
@@ -296,12 +296,12 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.ActionProcessedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+        var dispatcher = _factory.CreateAzureServiceBusFunctionInvoker();
         // TotalAmount = 0 should trigger dead-lettering
         var invalidOrder = new OrderCreatedEvent { OrderId = 0, CustomerName = "Invalid", TotalAmount = 0 };
 
         // Act
-        var result = await dispatcher.DispatchToQueueAsync("orders-manual", invalidOrder);
+        var result = await dispatcher.InvokeQueueAsync("orders-manual", invalidOrder);
 
         // Assert — function did NOT add to the processed list
         Assert.Empty(OrderAzureServiceBusFunctions.ActionProcessedOrders);
@@ -378,7 +378,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     /// and the function is discovered and invoked correctly.
     /// </summary>
     [Fact]
-    public async Task DispatchToQueueAsync_EnvVarQueueName_FunctionDiscoveredAndInvoked()
+    public async Task InvokeQueueAsync_EnvVarQueueName_FunctionDiscoveredAndInvoked()
     {
         // Arrange – set the environment variable BEFORE the factory resolves function metadata.
         // Because FunctionAppFactory is a class fixture (shared), the env var must be set prior
@@ -387,12 +387,12 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Environment.SetEnvironmentVariable("TestQueueName", resolvedQueueName);
 
         using var isolatedFactory = new FunctionAppFactory<Program>();
-        var dispatcher = isolatedFactory.CreateAzureServiceBusDispatcher();
+        var dispatcher = isolatedFactory.CreateAzureServiceBusFunctionInvoker();
 
         var order = new OrderCreatedEvent { OrderId = 99, CustomerName = "EnvTest", TotalAmount = 1m };
 
         // Act
-        await dispatcher.DispatchToQueueAsync(resolvedQueueName, order);
+        await dispatcher.InvokeQueueAsync(resolvedQueueName, order);
 
         // Assert
         Assert.Single(OrderAzureServiceBusFunctions.EnvQueueProcessedOrders);
@@ -408,20 +408,20 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     /// is not registered as a known queue).
     /// </summary>
     [Fact]
-    public async Task DispatchToQueueAsync_EnvVarNotSet_ThrowsInvalidOperationException()
+    public async Task InvokeQueueAsync_EnvVarNotSet_ThrowsInvalidOperationException()
     {
         // Ensure the env var is absent
         Environment.SetEnvironmentVariable("TestQueueName", null);
 
         using var isolatedFactory = new FunctionAppFactory<Program>();
-        var dispatcher = isolatedFactory.CreateAzureServiceBusDispatcher();
+        var dispatcher = isolatedFactory.CreateAzureServiceBusFunctionInvoker();
 
         var order = new OrderCreatedEvent { OrderId = 1, CustomerName = "Test", TotalAmount = 1m };
 
         // The raw placeholder "%TestQueueName%" is not a valid resolved queue name,
         // so dispatching to it should throw.
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.DispatchToQueueAsync("env-test-queue", order));
+            () => dispatcher.InvokeQueueAsync("env-test-queue", order));
     }
 }
 

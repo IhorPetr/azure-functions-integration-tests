@@ -57,14 +57,14 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
     public IServiceProvider Services => _serviceProvider;
     
     /// <summary>
-    /// Creates a <see cref="AzureServiceBusDispatcher"/> that can invoke both queue-triggered and
+    /// Creates an <see cref="IAzureServiceBusFunctionInvoker"/> that can invoke both queue-triggered and
     /// topic-triggered functions discovered in the entry-point assembly without a live
-    /// Azure Service Bus. Use <see cref="AzureServiceBusDispatcher.DispatchToQueueAsync"/> for
-    /// queue triggers and <see cref="AzureServiceBusDispatcher.DispatchToTopicAsync"/> for topic
+    /// Azure Service Bus. Use <see cref="IAzureServiceBusFunctionInvoker.InvokeQueueAsync"/> for
+    /// queue triggers and <see cref="IAzureServiceBusFunctionInvoker.InvokeTopicAsync"/> for topic
     /// subscription triggers.
     /// </summary>
-    public AzureServiceBusDispatcher CreateAzureServiceBusDispatcher()
-        => new AzureServiceBusDispatcher(_serviceProvider, _serviceBusFunctions);
+    public IAzureServiceBusFunctionInvoker CreateAzureServiceBusFunctionInvoker()
+        => new AzureServiceBusFunctionInvoker(_serviceProvider, _serviceBusFunctions);
 
     /// <summary>
     /// Creates an HttpClient configured to make requests to the in-memory test server

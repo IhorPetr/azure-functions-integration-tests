@@ -14,9 +14,9 @@ namespace AzureFunctions.IntegrationTests.AzureServiceBus;
 /// Dispatches messages to Azure Functions with a <see cref="ServiceBusTriggerAttribute"/> bound
 /// to either a <b>queue</b> or a <b>topic subscription</b>, enabling in-process integration
 /// testing without a live Azure Service Bus namespace.
-/// Obtain an instance via <c>FunctionAppFactory.CreateAzureServiceBusDispatcher()</c>.
+/// Obtain an instance via <c>FunctionAppFactory.CreateAzureServiceBusFunctionInvoker()</c>.
 /// </summary>
-public class AzureServiceBusDispatcher
+public class AzureServiceBusFunctionInvoker : IAzureServiceBusFunctionInvoker
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<string, AzureServiceBusFunctionInfo> _queues;
@@ -24,7 +24,7 @@ public class AzureServiceBusDispatcher
     // topicName → all subscription functions registered for that topic
     private readonly Dictionary<string, List<AzureServiceBusFunctionInfo>> _topics;
 
-    internal AzureServiceBusDispatcher(
+    internal AzureServiceBusFunctionInvoker(
         IServiceProvider serviceProvider,
         IEnumerable<AzureServiceBusFunctionInfo> functions)
     {
@@ -68,12 +68,12 @@ public class AzureServiceBusDispatcher
     /// A <see cref="AzureServiceBusDispatchResult"/> containing the function's return value (if any)
     /// and the recorded message actions for assertion.
     /// </returns>
-    public Task<AzureServiceBusDispatchResult> DispatchToQueueAsync<TMessage>(
+    public Task<AzureServiceBusDispatchResult> InvokeQueueAsync<TMessage>(
         string queueName,
         TMessage message,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null)
-        => DispatchToQueueAsync(queueName, (object?)message, messageType, applicationProperties);
+        => InvokeQueueAsync(queueName, (object?)message, messageType, applicationProperties);
 
     /// <summary>
     /// Dispatches a message to the function whose <see cref="ServiceBusTriggerAttribute"/> is
@@ -90,7 +90,7 @@ public class AzureServiceBusDispatcher
     /// A <see cref="AzureServiceBusDispatchResult"/> containing the function's return value (if any)
     /// and the recorded message actions for assertion.
     /// </returns>
-    public async Task<AzureServiceBusDispatchResult> DispatchToQueueAsync(
+    public async Task<AzureServiceBusDispatchResult> InvokeQueueAsync(
         string queueName,
         object? message,
         string? messageType = null,
@@ -118,17 +118,17 @@ public class AzureServiceBusDispatcher
     /// <param name="messages">The batch of payloads to dispatch.</param>
     /// <param name="messageType">Optional subject applied to every message in the batch.</param>
     /// <param name="applicationProperties">Optional application properties applied to every message.</param>
-    public Task<AzureServiceBusDispatchResult> DispatchBatchToQueueAsync<TMessage>(
+    public Task<AzureServiceBusDispatchResult> InvokeBatchQueueAsync<TMessage>(
         string queueName,
         IReadOnlyList<TMessage> messages,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null)
-        => DispatchBatchToQueueAsync(queueName, messages.Cast<object?>().ToList(), messageType, applicationProperties);
+        => InvokeBatchQueueAsync(queueName, messages.Cast<object?>().ToList(), messageType, applicationProperties);
 
     /// <summary>
     /// Dispatches a batch of messages to a function configured with <c>IsBatched = true</c>.
     /// </summary>
-    public async Task<AzureServiceBusDispatchResult> DispatchBatchToQueueAsync(
+    public async Task<AzureServiceBusDispatchResult> InvokeBatchQueueAsync(
         string queueName,
         IReadOnlyList<object?> messages,
         string? messageType = null,
@@ -145,7 +145,7 @@ public class AzureServiceBusDispatcher
         {
             throw new InvalidOperationException(
                 $"Queue function '{info.FunctionName}' is not configured for batched processing. " +
-                "Use DispatchToQueueAsync for single-message dispatch.");
+                "Use InvokeQueueAsync for single-message dispatch.");
         }
 
         var batch = messages
@@ -183,16 +183,16 @@ public class AzureServiceBusDispatcher
     /// <param name="applicationProperties">Optional application properties to attach.</param>
     /// <returns>
     /// A <see cref="AzureServiceBusDispatchResult"/> from the last matching subscription invoked.
-    /// When multiple subscriptions match, use <see cref="DispatchToTopicAsync(string,object?,string?,string?,IDictionary{string,object}?)"/>
+    /// When multiple subscriptions match, use <see cref="InvokeTopicAsync(string,object?,string?,string?,IDictionary{string,object}?)"/>
     /// and target a specific subscription to get per-invocation results.
     /// </returns>
-    public Task<AzureServiceBusDispatchResult> DispatchToTopicAsync<TMessage>(
+    public Task<AzureServiceBusDispatchResult> InvokeTopicAsync<TMessage>(
         string topicName,
         TMessage message,
         string? subscriptionName = null,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null)
-        => DispatchToTopicAsync(topicName, (object?)message, subscriptionName, messageType, applicationProperties);
+        => InvokeTopicAsync(topicName, (object?)message, subscriptionName, messageType, applicationProperties);
 
     /// <summary>
     /// Dispatches a message to topic-triggered functions bound to <paramref name="topicName"/>.
@@ -217,7 +217,7 @@ public class AzureServiceBusDispatcher
     /// <see cref="ServiceBusReceivedMessage.Subject"/>.
     /// </param>
     /// <param name="applicationProperties">Optional application properties to attach.</param>
-    public async Task<AzureServiceBusDispatchResult> DispatchToTopicAsync(
+    public async Task<AzureServiceBusDispatchResult> InvokeTopicAsync(
         string topicName,
         object? message,
         string? subscriptionName = null,
@@ -268,18 +268,18 @@ public class AzureServiceBusDispatcher
     /// Dispatches a batch of messages to a topic function configured with <c>IsBatched = true</c>.
     /// </summary>
     /// <typeparam name="TMessage">The message payload type.</typeparam>
-    public Task<AzureServiceBusDispatchResult> DispatchBatchToTopicAsync<TMessage>(
+    public Task<AzureServiceBusDispatchResult> InvokeBatchTopicAsync<TMessage>(
         string topicName,
         IReadOnlyList<TMessage> messages,
         string? subscriptionName = null,
         string? messageType = null,
         IDictionary<string, object>? applicationProperties = null)
-        => DispatchBatchToTopicAsync(topicName, messages.Cast<object?>().ToList(), subscriptionName, messageType, applicationProperties);
+        => InvokeBatchTopicAsync(topicName, messages.Cast<object?>().ToList(), subscriptionName, messageType, applicationProperties);
 
     /// <summary>
     /// Dispatches a batch of messages to a topic function configured with <c>IsBatched = true</c>.
     /// </summary>
-    public async Task<AzureServiceBusDispatchResult> DispatchBatchToTopicAsync(
+    public async Task<AzureServiceBusDispatchResult> InvokeBatchTopicAsync(
         string topicName,
         IReadOnlyList<object?> messages,
         string? subscriptionName = null,
