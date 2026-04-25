@@ -4,7 +4,7 @@ using Microsoft.Azure.Functions.Worker;
 namespace AzureFunctions.IntegrationTests.Mocks.AzureServiceBus;
 
 /// <summary>
-/// An in-memory mock of <see cref="AzureServiceBusMessageActions"/> for use in integration tests.
+/// An in-memory mock of <see cref="ServiceBusMessageActions"/> for use in integration tests.
 /// All settlement calls (<c>CompleteMessageAsync</c>, <c>AbandonMessageAsync</c>, etc.) are
 /// recorded in the corresponding collections so tests can assert against them without a live
 /// Azure Service Bus connection.

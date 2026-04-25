@@ -13,7 +13,7 @@ A testing library for Azure Functions v4 (isolated worker process model) that pr
 - 📝 **Route parameter support** - Handles complex routes with parameters like `{id}`, `{email}`, etc.
 - ⚙️ **Customizable** - Virtual methods to override host configuration
 - 🔄 **HttpClient integration** - Use familiar HttpClient for testing
-- 📨 **Azure Service Bus testing** - Execute queue/topic-triggered functions without a real Service Bus namespace
+- 📨 **Azure Service Bus integration** - Execute queue/topic-triggered functions without a real Azure Service Bus namespace
 
 ## Installation
 
@@ -284,12 +284,15 @@ public async Task GetOrder_WithRouteParameters_ReturnsOk()
 - ✅ Session-enabled queues (`IsSessionsEnabled = true`)
 - ✅ Manual message settlement via `ServiceBusMessageActions` (Complete, DeadLetter, Abandon, Defer)
 - ✅ Session state management via `ServiceBusSessionMessageActions`
-- ✅ Return values / output bindings from Service Bus triggered functions
+- ✅ Return values / output bindings from Azure Service Bus triggered functions
+- ✅ Direct `ServiceBusReceivedMessage` pass-through (full metadata control)
+- ✅ Environment-variable queue/topic name resolution (`%VariableName%` syntax)
 
 ## Azure Service Bus Testing
 
-Use `CreateAzureServiceBusFunctionExecutor()` to execute Azure Service Bus triggered functions
-directly in-process without connecting to a real Azure Service Bus namespace.
+Use `CreateAzureServiceBusFunctionExecutor()` to obtain an `IAzureServiceBusFunctionExecutor`
+and execute Azure Service Bus triggered functions directly in-process without connecting to
+a real Azure Service Bus namespace.
 
 ### Queue execution
 
@@ -305,7 +308,11 @@ public class OrderFunctionTests : IClassFixture<FunctionAppFactory<Program>>
     {
         var executor = _factory.CreateAzureServiceBusFunctionExecutor();
 
-        await executor.ExecuteQueueAsync("orders", new OrderCreatedEvent { OrderId = 1 });
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1 }),
+            messageId: "msg-001");
+
+        await executor.ExecuteQueueAsync("orders", message);
 
         Assert.Single(OrderFunctions.ProcessedOrders);
     }
@@ -316,18 +323,33 @@ public class OrderFunctionTests : IClassFixture<FunctionAppFactory<Program>>
 
 ```csharp
 // Execute ALL subscriptions registered for the topic
-await executor.ExecuteTopicAsync("events", new { EventId = 1 }, messageType: "OrderShipped");
+await executor.ExecuteTopicAsync("events",
+    ServiceBusModelFactory.ServiceBusReceivedMessage(
+        body: BinaryData.FromObjectAsJson(new { EventId = 1 }),
+        subject: "OrderShipped"));
 
 // Execute only a specific subscription
-await executor.ExecuteTopicAsync("events", new { EventId = 2 },
-    subscriptionName: "analytics-sub", messageType: "OrderUpdated");
+await executor.ExecuteTopicAsync("events",
+    ServiceBusModelFactory.ServiceBusReceivedMessage(
+        body: BinaryData.FromObjectAsJson(new { EventId = 2 }),
+        subject: "OrderUpdated"),
+    subscriptionName: "analytics-sub");
 ```
 
 ### Batched queue
 
 ```csharp
-var orders = new[] { new OrderCreatedEvent { OrderId = 1 }, new OrderCreatedEvent { OrderId = 2 } };
-var result = await executor.ExecuteBatchQueueAsync("batch-orders", orders);
+var messages = new[]
+{
+    ServiceBusModelFactory.ServiceBusReceivedMessage(
+        body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1 }),
+        messageId: "msg-001"),
+    ServiceBusModelFactory.ServiceBusReceivedMessage(
+        body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 2 }),
+        messageId: "msg-002"),
+};
+
+var result = await executor.ExecuteBatchQueueAsync("batch-orders", messages);
 
 Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
 ```
@@ -335,7 +357,11 @@ Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
 ### Session-enabled queue
 
 ```csharp
-var result = await executor.ExecuteQueueAsync("session-orders", order);
+var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+    body: BinaryData.FromObjectAsJson(order),
+    messageId: "msg-session-001");
+
+var result = await executor.ExecuteQueueAsync("session-orders", message);
 
 Assert.NotNull(result.SessionMessageActions);
 Assert.Equal("42", result.SessionMessageActions.SessionState!.ToString());
@@ -348,27 +374,79 @@ The `AzureServiceBusExecutionResult` returned by every execution method exposes:
 
 | Property | Description |
 |---|---|
-| `ReturnValue` | Function's return value (output binding) |
+| `ReturnValue` | Function's return value (output binding), or `null` for `void`/`Task` functions |
 | `MessageActions` | Spy recording Complete / DeadLetter / Abandon / Defer calls |
 | `SessionMessageActions` | Spy recording session-state and session-lock calls (`null` for non-session functions) |
 
 ```csharp
 // Check dead-letter
-var result = await executor.ExecuteQueueAsync("orders-manual", invalidOrder);
+var result = await executor.ExecuteQueueAsync("orders-manual", invalidMessage);
 Assert.Single(result.MessageActions.DeadLetteredMessages);
 var (_, reason, description, _) = result.MessageActions.DeadLetteredMessages[0];
 Assert.Equal("InvalidOrder", reason);
 
 // Check return value (output binding)
-var result = await executor.ExecuteQueueAsync("forward-orders", order);
+var result = await executor.ExecuteQueueAsync("forward-orders", message);
 var forwarded = Assert.IsType<OrderForwardedEvent>(result.ReturnValue);
 Assert.Equal(order.OrderId, forwarded.OriginalOrderId);
+```
+
+### Direct `ServiceBusReceivedMessage` pass-through
+
+All four execute methods accept a pre-built `ServiceBusReceivedMessage` directly,
+skipping serialisation entirely. Use this when you need full control over message metadata —
+subject, message-id, correlation-id, application properties, or a hand-crafted body.
+
+```csharp
+// Build the message with full metadata control
+var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+    body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1 }),
+    subject: "order.created",
+    messageId: "msg-001",
+    correlationId: "trace-abc",
+    properties: new Dictionary<string, object> { ["tenantId"] = "tenant-xyz" });
+
+// Single queue message
+var result = await executor.ExecuteQueueAsync("orders", message);
+
+// Single topic message (specific subscription)
+await executor.ExecuteTopicAsync("events", message, subscriptionName: "analytics-sub");
+
+// Batched queue
+var batch = new[] { message1, message2 };
+var result = await executor.ExecuteBatchQueueAsync("batch-orders", batch);
+
+// Batched topic
+await executor.ExecuteBatchTopicAsync("events", batch, subscriptionName: "integration-tests-sub");
+```
+
+### Environment-variable queue/topic names
+
+Azure Functions supports `%VariableName%` syntax in trigger attribute properties.
+`FunctionAppFactory` resolves these against `Environment.GetEnvironmentVariable` at startup time.
+
+```csharp
+// Function definition
+[Function("ProcessOrderFromEnvQueue")]
+public Task ProcessOrderFromEnvQueue(
+    [ServiceBusTrigger("%TestQueueName%", Connection = "ServiceBusConnection")] OrderCreatedEvent order,
+    FunctionContext context) { ... }
+
+// Test — set the env var BEFORE constructing the factory
+Environment.SetEnvironmentVariable("TestQueueName", "my-test-queue");
+using var factory = new FunctionAppFactory<Program>();
+var executor = factory.CreateAzureServiceBusFunctionExecutor();
+
+var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+    body: BinaryData.FromObjectAsJson(order));
+
+await executor.ExecuteQueueAsync("my-test-queue", message);
 ```
 
 ## Limitations
 
 - Does not test the actual HTTP binding (e.g., authentication middleware at the HTTP level)
-- Timer, Blob, Event Hub, and other non-HTTP / non-Service-Bus trigger types are not yet supported
+- Timer, Blob, Event Hub, and other non-HTTP / non-Azure-Service-Bus trigger types are not yet supported
 - `ExecuteBatchTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
 
 ## Example Project Structure

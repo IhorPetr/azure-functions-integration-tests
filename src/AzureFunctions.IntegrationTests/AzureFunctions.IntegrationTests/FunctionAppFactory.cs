@@ -57,12 +57,13 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
     public IServiceProvider Services => _serviceProvider;
     
     /// <summary>
-    /// Creates an <see cref="IAzureServiceBusFunctionExecutor"/> that can invoke both queue-triggered and
-    /// topic-triggered functions discovered in the entry-point assembly without a live
-    /// Azure Service Bus. Use <see cref="IAzureServiceBusFunctionExecutor.ExecuteQueueAsync"/> for
-    /// queue triggers and <see cref="IAzureServiceBusFunctionExecutor.ExecuteTopicAsync"/> for topic
-    /// subscription triggers.
+    /// Creates an <see cref="IAzureServiceBusFunctionExecutor"/> that can execute Azure Service Bus
+    /// triggered functions in-process without a live Azure Service Bus namespace.
     /// </summary>
+    /// <returns>
+    /// A configured <see cref="IAzureServiceBusFunctionExecutor"/> instance scoped to the discovered
+    /// Service Bus triggered functions in the entry-point assembly.
+    /// </returns>
     public IAzureServiceBusFunctionExecutor CreateAzureServiceBusFunctionExecutor()
         => new AzureServiceBusFunctionExecutor(_serviceProvider, _serviceBusFunctions);
 

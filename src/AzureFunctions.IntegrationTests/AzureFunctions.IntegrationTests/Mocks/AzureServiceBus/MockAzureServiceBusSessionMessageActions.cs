@@ -3,17 +3,10 @@ using Microsoft.Azure.Functions.Worker;
 namespace AzureFunctions.IntegrationTests.Mocks.AzureServiceBus;
 
 /// <summary>
-/// An in-memory mock of <see cref="AzureServiceBusSessionMessageActions"/> for session-enabled
-/// integration tests. Records session state operations so tests can assert against them
-/// without a live Azure Service Bus connection.
-/// <para>
-/// Note: message settlement (<c>CompleteMessageAsync</c> etc.) belongs to
-/// <see cref="MockAzureServiceBusMessageActions"/>, not this class. Session-enabled functions
-/// typically receive BOTH a <see cref="ServiceBusMessageActions"/> and a
-/// <see cref="ServiceBusSessionMessageActions"/> parameter; use
-/// <see cref="AzureServiceBusExecutionResult.MessageActions"/> for settlement assertions and
-/// <see cref="AzureServiceBusExecutionResult.SessionMessageActions"/> for session state assertions.
-/// </para>
+/// An in-memory mock of <see cref="ServiceBusSessionMessageActions"/> for use in integration tests.
+/// Session-state operations (<c>GetSessionStateAsync</c>, <c>SetSessionStateAsync</c>) and
+/// <c>RenewSessionLockAsync</c> are tracked in-memory so tests can assert against them without
+/// a live Azure Service Bus connection.
 /// </summary>
 public class MockAzureServiceBusSessionMessageActions : ServiceBusSessionMessageActions
 {

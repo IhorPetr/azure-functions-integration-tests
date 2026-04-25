@@ -7,8 +7,9 @@ namespace AzureFunctions.IntegrationTests.SampleApp.Tests;
 /// <summary>
 /// Integration tests for <see cref="AzureServiceBusFunctionExecutor"/>.
 /// Covers queue execution, topic execution, session-enabled queues, batched queues,
-/// return-value / output bindings, and manual message settlement (Complete / DeadLetter / Abandon / Defer).
-/// Functions are invoked in-process without a real Azure Service Bus connection.
+/// return-value / output bindings, manual message settlement (Complete / DeadLetter / Abandon / Defer),
+/// environment-variable queue name resolution, and direct <see cref="ServiceBusReceivedMessage"/> overloads.
+/// Functions are executed in-process without a real Azure Service Bus connection.
 /// </summary>
 public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<Program>>, IDisposable
 {
@@ -22,157 +23,74 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
     public void Dispose() => ResetState();
 
+    /// <summary>
+    /// Resets all static state on <see cref="OrderAzureServiceBusFunctions"/> between tests
+    /// to ensure full isolation regardless of execution order.
+    /// </summary>
     private static void ResetState()
     {
         OrderAzureServiceBusFunctions.ProcessedOrders.Clear();
         OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects.Clear();
         OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects.Clear();
+        OrderAzureServiceBusFunctions.SessionProcessedOrders.Clear();
+        OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
+        OrderAzureServiceBusFunctions.ForwardedOrders.Clear();
+        OrderAzureServiceBusFunctions.ActionProcessedOrders.Clear();
         OrderAzureServiceBusFunctions.EnvQueueProcessedOrders.Clear();
     }
 
-    // ── Queue execution ───────────────────────────────────────────────────────
-
-    [Fact]
-    public void CreateServiceBusDispatcher_ShouldReturnDispatcher()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-
-        Assert.NotNull(dispatcher);
-    }
-
-    [Fact]
-    public async Task ExecuteQueueAsync_TypedMessage_ShouldInvokeTriggerFunction()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-        var order = new OrderCreatedEvent { OrderId = 42, CustomerName = "Alice", TotalAmount = 99.99m };
-
-        await dispatcher.ExecuteQueueAsync("orders", order);
-
-        Assert.Single(OrderAzureServiceBusFunctions.ProcessedOrders);
-        Assert.Equal(42, OrderAzureServiceBusFunctions.ProcessedOrders[0].OrderId);
-        Assert.Equal("Alice", OrderAzureServiceBusFunctions.ProcessedOrders[0].CustomerName);
-        Assert.Equal(99.99m, OrderAzureServiceBusFunctions.ProcessedOrders[0].TotalAmount);
-    }
-
-    [Fact]
-    public async Task ExecuteQueueAsync_WithMessageType_ShouldSetSubjectOnMessage()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-
-        await dispatcher.ExecuteQueueAsync("orders", new OrderCreatedEvent { OrderId = 1 }, messageType: "OrderCreated");
-
-        Assert.Single(OrderAzureServiceBusFunctions.ProcessedOrders);
-    }
-
-    [Fact]
-    public async Task ExecuteQueueAsync_MultipleMessages_ShouldInvokeFunctionForEach()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-
-        await dispatcher.ExecuteQueueAsync("orders", new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob" });
-        await dispatcher.ExecuteQueueAsync("orders", new OrderCreatedEvent { OrderId = 2, CustomerName = "Carol" });
-
-        Assert.Equal(2, OrderAzureServiceBusFunctions.ProcessedOrders.Count);
-        Assert.Equal(1, OrderAzureServiceBusFunctions.ProcessedOrders[0].OrderId);
-        Assert.Equal(2, OrderAzureServiceBusFunctions.ProcessedOrders[1].OrderId);
-    }
-
-    [Fact]
-    public async Task ExecuteQueueAsync_WithApplicationProperties_ShouldInvokeFunction()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-        var props = new Dictionary<string, object> { ["correlationId"] = "abc-123" };
-
-        await dispatcher.ExecuteQueueAsync("orders", new OrderCreatedEvent { OrderId = 7 },
-            applicationProperties: props);
-
-        Assert.Single(OrderAzureServiceBusFunctions.ProcessedOrders);
-        Assert.Equal(7, OrderAzureServiceBusFunctions.ProcessedOrders[0].OrderId);
-    }
-
-    [Fact]
-    public async Task ExecuteQueueAsync_UnknownQueue_ShouldThrow()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.ExecuteQueueAsync("unknown-queue", new { }));
-    }
-
-    // ── Topic execution ───────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task ExecuteTopicAsync_NoSubscriptionFilter_ShouldInvokeAllSubscriptions()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-
-        await dispatcher.ExecuteTopicAsync("events", new { EventId = 1 }, messageType: "OrderShipped");
-
-        Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
-        Assert.Equal("OrderShipped", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
-        Assert.Single(OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects);
-        Assert.Equal("OrderShipped", OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects[0]);
-    }
-
-    [Fact]
-    public async Task ExecuteTopicAsync_SpecificSubscription_ShouldInvokeOnlyThatSubscription()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-
-        await dispatcher.ExecuteTopicAsync("events", new { EventId = 2 },
-            subscriptionName: "integration-tests-sub",
-            messageType: "OrderCancelled");
-
-        Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
-        Assert.Equal("OrderCancelled", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
-        Assert.Empty(OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects);
-    }
-
-    [Fact]
-    public async Task ExecuteTopicAsync_SpecificAnalyticsSubscription_ShouldInvokeOnlyAnalytics()
-    {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-
-        await dispatcher.ExecuteTopicAsync("events", new { EventId = 3 },
-            subscriptionName: "analytics-sub",
-            messageType: "OrderUpdated");
-
-        Assert.Empty(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
-        Assert.Single(OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects);
-        Assert.Equal("OrderUpdated", OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects[0]);
-    }
+    // ── Error handling ────────────────────────────────────────────────────────
 
     [Fact]
     public async Task ExecuteTopicAsync_UnknownTopic_ShouldThrow()
     {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(new { }),
+            subject: "order.direct",
+            messageId: "msg-direct-001",
+            correlationId: "corr-001");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.ExecuteTopicAsync("unknown-topic", new { }));
+            () => executor.ExecuteTopicAsync("unknown-topic", rawMessage));
     }
 
     [Fact]
     public async Task ExecuteTopicAsync_UnknownSubscription_ShouldThrow()
     {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(new { }),
+            subject: "order.direct",
+            messageId: "msg-direct-001",
+            correlationId: "corr-001");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.ExecuteTopicAsync("events", new { }, subscriptionName: "nonexistent-sub"));
+            () => executor.ExecuteTopicAsync("events", rawMessage, subscriptionName: "nonexistent-sub"));
     }
-    
-       // ── Session-enabled queue ─────────────────────────────────────────────────
 
+    // ── Session-enabled queue ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Verifies that a session-enabled queue trigger function is executed, receives the typed order,
+    /// stores session state, and completes the message via <see cref="MockAzureServiceBusMessageActions"/>.
+    /// </summary>
     [Fact]
     public async Task SessionQueue_FunctionReceivesOrder_AndSetsSessionState()
     {
         // Arrange
         OrderAzureServiceBusFunctions.SessionProcessedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
         var order = new OrderCreatedEvent { OrderId = 42, CustomerName = "Alice", TotalAmount = 99.99m };
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(order),
+            subject: "order.session",
+            messageId: "msg-session-001",
+            correlationId: "corr-session-001");
 
         // Act
-        var result = await dispatcher.ExecuteQueueAsync("session-orders", order);
+        var result = await executor.ExecuteQueueAsync("session-orders", rawMessage);
 
         // Assert — function executed
         Assert.Single(OrderAzureServiceBusFunctions.SessionProcessedOrders);
@@ -187,13 +105,20 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Assert.Single(result.MessageActions.CompletedMessages);
     }
 
+    /// <summary>
+    /// Verifies that <see cref="AzureServiceBusExecutionResult.SessionMessageActions"/> is non-null
+    /// when the triggered function is configured with <c>IsSessionsEnabled = true</c>.
+    /// </summary>
     [Fact]
-    public async Task SessionQueue_IsSessionsEnabled_DetectedCorrectly()
+    public async Task SessionQueue_IsSessionsEnabled_SessionActionsArePopulated()
     {
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-        var order = new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob", TotalAmount = 10m };
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(
+                new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob", TotalAmount = 10m }),
+            messageId: "msg-session-002");
 
-        var result = await dispatcher.ExecuteQueueAsync("session-orders", order);
+        var result = await executor.ExecuteQueueAsync("session-orders", rawMessage);
 
         // SessionMessageActions must be a non-null MockAzureServiceBusSessionMessageActions
         Assert.NotNull(result.SessionMessageActions);
@@ -201,22 +126,33 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
     // ── Batched queue ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Verifies that a batch of <see cref="ServiceBusReceivedMessage"/> instances is forwarded to
+    /// the function in full and that all messages are completed via <see cref="MockAzureServiceBusMessageActions"/>.
+    /// </summary>
     [Fact]
     public async Task BatchedQueue_DispatchesBatch_AllMessagesCompleted()
     {
         // Arrange
         OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-        var orders = new[]
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var rawMessages = new[]
         {
-            new OrderCreatedEvent { OrderId = 1, CustomerName = "Carol", TotalAmount = 10m },
-            new OrderCreatedEvent { OrderId = 2, CustomerName = "Dave",  TotalAmount = 20m },
-            new OrderCreatedEvent { OrderId = 3, CustomerName = "Eve",   TotalAmount = 30m },
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1, CustomerName = "Carol", TotalAmount = 10m }),
+                messageId: "batch-001"),
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 2, CustomerName = "Dave", TotalAmount = 20m }),
+                messageId: "batch-002"),
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 3, CustomerName = "Eve", TotalAmount = 30m }),
+                messageId: "batch-003"),
         };
 
+
         // Act
-        var result = await dispatcher.ExecuteBatchQueueAsync("batch-orders", orders);
+        var result = await executor.ExecuteBatchQueueAsync("batch-orders", rawMessages);
 
         // Assert — function received the full batch
         Assert.Equal(3, OrderAzureServiceBusFunctions.BatchReceivedMessages.Count);
@@ -228,15 +164,23 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Assert.Null(result.SessionMessageActions);
     }
 
+    /// <summary>
+    /// Verifies that a single-item batch is treated as a valid minimal batch.
+    /// </summary>
     [Fact]
     public async Task BatchedQueue_SingleMessage_WorksAsMinimalBatch()
     {
         OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
-        var orders = new[] { new OrderCreatedEvent { OrderId = 99, CustomerName = "Frank", TotalAmount = 5m } };
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var rawMessages = new[]
+        {
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 99, CustomerName = "Frank", TotalAmount = 5m }),
+                messageId: "batch-single-001"),
+        };
 
-        var result = await dispatcher.ExecuteBatchQueueAsync("batch-orders", orders);
+        var result = await executor.ExecuteBatchQueueAsync("batch-orders", rawMessages);
 
         Assert.Single(OrderAzureServiceBusFunctions.BatchReceivedMessages);
         Assert.Single(result.MessageActions.CompletedMessages);
@@ -244,17 +188,24 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
     // ── Return value / output binding ─────────────────────────────────────────
 
+    /// <summary>
+    /// Verifies that a function's return value (output binding) is captured in
+    /// <see cref="AzureServiceBusExecutionResult.ReturnValue"/> and can be cast to the expected type.
+    /// </summary>
     [Fact]
     public async Task ForwardOrderQueue_FunctionReturnsForwardedEvent()
     {
         // Arrange
         OrderAzureServiceBusFunctions.ForwardedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
         var order = new OrderCreatedEvent { OrderId = 7, CustomerName = "Grace", TotalAmount = 55m };
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(order),
+            messageId: "forward-001");
 
         // Act
-        var result = await dispatcher.ExecuteQueueAsync("forward-orders", order);
+        var result = await executor.ExecuteQueueAsync("forward-orders", rawMessage);
 
         // Assert — function captured the order
         Assert.Single(OrderAzureServiceBusFunctions.ForwardedOrders);
@@ -267,19 +218,26 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Assert.Equal("Grace", forwarded.CustomerName);
     }
 
-    // ── Manual settlement (DeadLetter, Complete) ──────────────────────────────
+    // ── Manual settlement (Complete / DeadLetter) ─────────────────────────────
 
+    /// <summary>
+    /// Verifies that a valid order triggers <c>CompleteMessageAsync</c> and the message
+    /// is recorded in <see cref="MockAzureServiceBusMessageActions.CompletedMessages"/>.
+    /// </summary>
     [Fact]
     public async Task ManualActionsQueue_ValidOrder_IsCompleted()
     {
         // Arrange
         OrderAzureServiceBusFunctions.ActionProcessedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
         var order = new OrderCreatedEvent { OrderId = 10, CustomerName = "Henry", TotalAmount = 100m };
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(order),
+            messageId: "manual-001");
 
         // Act
-        var result = await dispatcher.ExecuteQueueAsync("orders-manual", order);
+        var result = await executor.ExecuteQueueAsync("orders-manual", rawMessage);
 
         // Assert — function processed the order
         Assert.Single(OrderAzureServiceBusFunctions.ActionProcessedOrders);
@@ -290,18 +248,25 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Assert.Empty(result.MessageActions.DeadLetteredMessages);
     }
 
+    /// <summary>
+    /// Verifies that an order with <c>TotalAmount = 0</c> is dead-lettered with the expected
+    /// reason and description, and is NOT added to the processed-orders collection.
+    /// </summary>
     [Fact]
     public async Task ManualActionsQueue_InvalidOrder_IsDeadLettered()
     {
         // Arrange
         OrderAzureServiceBusFunctions.ActionProcessedOrders.Clear();
 
-        var dispatcher = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
         // TotalAmount = 0 should trigger dead-lettering
         var invalidOrder = new OrderCreatedEvent { OrderId = 0, CustomerName = "Invalid", TotalAmount = 0 };
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(invalidOrder),
+            messageId: "manual-invalid-001");
 
         // Act
-        var result = await dispatcher.ExecuteQueueAsync("orders-manual", invalidOrder);
+        var result = await executor.ExecuteQueueAsync("orders-manual", rawMessage);
 
         // Assert — function did NOT add to the processed list
         Assert.Empty(OrderAzureServiceBusFunctions.ActionProcessedOrders);
@@ -315,15 +280,17 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Assert.Equal("TotalAmount must be positive", description);
     }
 
-    // ── MessageActions: Abandon and Defer ─────────────────────────────────────
+    // ── MessageActions spy: Abandon and Defer ──────────────────────────────────
 
+    /// <summary>
+    /// Verifies that <c>AbandonMessageAsync</c> calls are recorded by
+    /// <see cref="MockAzureServiceBusMessageActions.AbandonedMessages"/>.
+    /// </summary>
     [Fact]
     public async Task MessageActions_AbandonedMessages_RecordedCorrectly()
     {
-        // Verify that if we had a function calling AbandonMessageAsync the spy records it.
-        // We use a standalone mock directly to verify the mock's tracking.
         var mock = new MockAzureServiceBusMessageActions();
-        var msg = ServiceBusModelFactory.ServiceBusReceivedMessage(messageId: "test-1");
+        var msg = ServiceBusModelFactory.ServiceBusReceivedMessage(messageId: "test-abandon-1");
 
         await mock.AbandonMessageAsync(msg);
 
@@ -332,11 +299,15 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Assert.Null(mock.AbandonedMessages[0].Properties);
     }
 
+    /// <summary>
+    /// Verifies that <c>DeferMessageAsync</c> calls, including message properties to modify,
+    /// are recorded by <see cref="MockAzureServiceBusMessageActions.DeferredMessages"/>.
+    /// </summary>
     [Fact]
     public async Task MessageActions_DeferredMessages_RecordedWithProperties()
     {
         var mock = new MockAzureServiceBusMessageActions();
-        var msg = ServiceBusModelFactory.ServiceBusReceivedMessage(messageId: "test-2");
+        var msg = ServiceBusModelFactory.ServiceBusReceivedMessage(messageId: "test-defer-1");
         var props = new Dictionary<string, object> { ["retryCount"] = 3 };
 
         await mock.DeferMessageAsync(msg, props);
@@ -347,6 +318,10 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
     // ── SessionMessageActions spy ─────────────────────────────────────────────
 
+    /// <summary>
+    /// Verifies that <c>SetSessionStateAsync</c> / <c>GetSessionStateAsync</c> round-trips
+    /// correctly through <see cref="MockAzureServiceBusSessionMessageActions"/>.
+    /// </summary>
     [Fact]
     public async Task SessionMessageActions_GetSetState_RoundTrips()
     {
@@ -360,6 +335,10 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Assert.Equal("session-value-42", mock.SessionState!.ToString());
     }
 
+    /// <summary>
+    /// Verifies that <c>RenewSessionLockAsync</c> sets
+    /// <see cref="MockAzureServiceBusSessionMessageActions.SessionLockRenewed"/> to <see langword="true"/>.
+    /// </summary>
     [Fact]
     public async Task SessionMessageActions_RenewSessionLock_TrackedCorrectly()
     {
@@ -374,54 +353,187 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
     /// <summary>
     /// Verifies that a queue name configured as <c>%TestQueueName%</c> on the
-    /// <c>ServiceBusTriggerAttribute</c> is resolved from the environment variable
+    /// <see cref="ServiceBusTriggerAttribute"/> is resolved from the environment variable
     /// and the function is discovered and invoked correctly.
+    /// An isolated <see cref="FunctionAppFactory{TEntryPoint}"/> is used to guarantee that
+    /// the env variable is set before function metadata is discovered.
     /// </summary>
     [Fact]
     public async Task ExecuteQueueAsync_EnvVarQueueName_FunctionDiscoveredAndInvoked()
     {
-        // Arrange – set the environment variable BEFORE the factory resolves function metadata.
-        // Because FunctionAppFactory is a class fixture (shared), the env var must be set prior
-        // to the first test run. Here we use a dedicated factory to guarantee isolation.
         const string resolvedQueueName = "env-test-queue";
         Environment.SetEnvironmentVariable("TestQueueName", resolvedQueueName);
 
-        using var isolatedFactory = new FunctionAppFactory<Program>();
-        var dispatcher = isolatedFactory.CreateAzureServiceBusFunctionExecutor();
+        try
+        {
+            using var isolatedFactory = new FunctionAppFactory<Program>();
+            var executor = isolatedFactory.CreateAzureServiceBusFunctionExecutor();
 
-        var order = new OrderCreatedEvent { OrderId = 99, CustomerName = "EnvTest", TotalAmount = 1m };
+            var order = new OrderCreatedEvent { OrderId = 99, CustomerName = "EnvTest", TotalAmount = 1m };
+            var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromObjectAsJson(order),
+                messageId: "env-001");
 
-        // Act
-        await dispatcher.ExecuteQueueAsync(resolvedQueueName, order);
+            await executor.ExecuteQueueAsync(resolvedQueueName, rawMessage);
 
-        // Assert
-        Assert.Single(OrderAzureServiceBusFunctions.EnvQueueProcessedOrders);
-        Assert.Equal(99, OrderAzureServiceBusFunctions.EnvQueueProcessedOrders[0].OrderId);
-
-        // Cleanup
-        Environment.SetEnvironmentVariable("TestQueueName", null);
+            Assert.Single(OrderAzureServiceBusFunctions.EnvQueueProcessedOrders);
+            Assert.Equal(99, OrderAzureServiceBusFunctions.EnvQueueProcessedOrders[0].OrderId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TestQueueName", null);
+        }
     }
 
     /// <summary>
     /// Verifies that when the <c>TestQueueName</c> environment variable is not set,
-    /// the executor cannot find the function (the raw <c>%TestQueueName%</c> placeholder
-    /// is not registered as a known queue).
+    /// the executor cannot find the function because the raw <c>%TestQueueName%</c> placeholder
+    /// is never registered as a known queue name.
     /// </summary>
     [Fact]
     public async Task ExecuteQueueAsync_EnvVarNotSet_ThrowsInvalidOperationException()
     {
-        // Ensure the env var is absent
         Environment.SetEnvironmentVariable("TestQueueName", null);
 
         using var isolatedFactory = new FunctionAppFactory<Program>();
-        var dispatcher = isolatedFactory.CreateAzureServiceBusFunctionExecutor();
+        var executor = isolatedFactory.CreateAzureServiceBusFunctionExecutor();
 
-        var order = new OrderCreatedEvent { OrderId = 1, CustomerName = "Test", TotalAmount = 1m };
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1, CustomerName = "Test", TotalAmount = 1m }),
+            messageId: "env-missing-001");
 
-        // The raw placeholder "%TestQueueName%" is not a valid resolved queue name,
-        // so executing it should throw.
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher.ExecuteQueueAsync("env-test-queue", order));
+            () => executor.ExecuteQueueAsync("env-test-queue", rawMessage));
+    }
+
+    // ── Direct ServiceBusReceivedMessage overloads ────────────────────────────
+
+    /// <summary>
+    /// Verifies that the <c>subject</c> set on a pre-built <see cref="ServiceBusReceivedMessage"/>
+    /// is preserved and arrives unchanged at the topic-triggered function when a specific
+    /// subscription is targeted.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteTopicAsync_PreBuiltMessage_SubjectPreserved()
+    {
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString("{}"),
+            subject: "event.shipped");
+
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+
+        await executor.ExecuteTopicAsync("events", rawMessage, subscriptionName: "integration-tests-sub");
+
+        Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
+        Assert.Equal("event.shipped", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
+        Assert.Empty(OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects);
+    }
+
+    /// <summary>
+    /// Verifies that omitting the subscription filter causes ALL topic subscriptions to be executed,
+    /// each receiving the same pre-built message and subject.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteTopicAsync_PreBuiltMessage_NoFilter_AllSubscriptionsExecuted()
+    {
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString("{}"),
+            subject: "event.broadcast");
+
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+
+        await executor.ExecuteTopicAsync("events", rawMessage);
+
+        Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
+        Assert.Equal("event.broadcast", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
+        Assert.Single(OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects);
+        Assert.Equal("event.broadcast", OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects[0]);
+    }
+
+    /// <summary>
+    /// Verifies that a batch of pre-built <see cref="ServiceBusReceivedMessage"/> instances
+    /// passed to <see cref="IAzureServiceBusFunctionExecutor.ExecuteBatchQueueAsync"/>
+    /// are forwarded verbatim to the function without re-serialisation.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteBatchQueueAsync_PreBuiltMessages_AllMessagesForwardedToFunction()
+    {
+        // Arrange
+        OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
+
+        var messages = new[]
+        {
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromString("""{"orderId":1}"""), messageId: "b-001"),
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromString("""{"orderId":2}"""), messageId: "b-002"),
+        };
+
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+
+        // Act
+        var result = await executor.ExecuteBatchQueueAsync("batch-orders", messages);
+
+        // Assert — function received both pre-built messages verbatim
+        Assert.Equal(2, OrderAzureServiceBusFunctions.BatchReceivedMessages.Count);
+        Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="IAzureServiceBusFunctionExecutor.ExecuteBatchTopicAsync"/>
+    /// is not yet supported for non-batched topic functions and throws
+    /// <see cref="InvalidOperationException"/> when the matched subscription function
+    /// is not configured with <c>IsBatched = true</c>.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteBatchTopicAsync_NonBatchedSubscription_Throws()
+    {
+        var messages = new[]
+        {
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromString("{}"), subject: "event.test", messageId: "bt-001"),
+        };
+
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+
+        // The "events" topic subscriptions are not configured with IsBatched = true
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => executor.ExecuteBatchTopicAsync("events", messages,
+                subscriptionName: "integration-tests-sub"));
+    }
+
+    /// <summary>
+    /// Verifies that application properties set on a pre-built <see cref="ServiceBusReceivedMessage"/>
+    /// are forwarded to the function unchanged — the executor must not strip or alter message metadata.
+    /// The function receives the full raw message via the trigger parameter so all properties are intact.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteQueueAsync_PreBuiltMessage_MessageMetadataPreserved()
+    {
+        var props = new Dictionary<string, object>
+        {
+            ["tenantId"] = "tenant-abc",
+            ["priority"] = 1
+        };
+        var body = BinaryData.FromObjectAsJson(
+            new { orderId = 77, customerName = "PropTest", totalAmount = 5.0 });
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: body,
+            subject: "order.props",
+            properties: props,
+            messageId: "msg-props-001",
+            correlationId: "corr-props-001");
+
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var result = await executor.ExecuteQueueAsync("orders-manual", rawMessage);
+
+        // The function deserialised the body and processed the order
+        Assert.Single(OrderAzureServiceBusFunctions.ActionProcessedOrders);
+        Assert.Equal(77, OrderAzureServiceBusFunctions.ActionProcessedOrders[0].OrderId);
+        // Message was completed — metadata did not interfere with execution
+        Assert.Single(result.MessageActions.CompletedMessages);
+        // The completed-message reference is the exact same object passed in
+        Assert.Same(rawMessage, result.MessageActions.CompletedMessages[0]);
     }
 }
 
