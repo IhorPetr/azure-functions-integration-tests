@@ -5,7 +5,7 @@ namespace AzureFunctions.IntegrationTests.Models;
 /// <summary>
 /// Contains metadata about a discovered Azure Function with an Azure Service Bus trigger
 /// </summary>
-public class AzureServiceBusFunctionInfo
+internal class AzureServiceBusFunctionInfo
 {
     /// <summary>
     /// The type that contains the function method
