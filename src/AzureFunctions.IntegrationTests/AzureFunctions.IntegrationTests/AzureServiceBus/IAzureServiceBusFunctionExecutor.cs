@@ -111,4 +111,63 @@ public interface IAzureServiceBusFunctionExecutor
         string topicName,
         ServiceBusReceivedMessage[] messages,
         string? subscriptionName = null);
+
+    // ── Non-generic convenience overloads ─────────────────────────────────────
+    // Use these when the function's return value (output binding) is not relevant
+    // to the test. They delegate to the generic versions with T = object and
+    // return the same AzureServiceBusExecutionResult<object> so MessageActions
+    // and SessionMessageActions are still available for assertion.
+
+    /// <summary>
+    /// Convenience overload of <see cref="ExecuteQueueAsync{T}"/> for functions whose
+    /// return value (output binding) is not relevant to the test.
+    /// Returns <see cref="AzureServiceBusExecutionResult{T}"/> with <c>T = object</c>
+    /// so <see cref="AzureServiceBusExecutionResult{T}.MessageActions"/> and
+    /// <see cref="AzureServiceBusExecutionResult{T}.SessionMessageActions"/> are still available.
+    /// </summary>
+    /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
+    /// <param name="message">The pre-built message to pass directly to the function.</param>
+    Task<AzureServiceBusExecutionResult<object>> ExecuteQueueAsync(
+        string queueName,
+        ServiceBusReceivedMessage message)
+        => ExecuteQueueAsync<object>(queueName, message);
+
+    /// <summary>
+    /// Convenience overload of <see cref="ExecuteBatchQueueAsync{T}"/> for batched functions
+    /// whose return value (output binding) is not relevant to the test.
+    /// </summary>
+    /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
+    /// <param name="messages">The pre-built messages to pass directly to the function.</param>
+    Task<AzureServiceBusExecutionResult<object>> ExecuteBatchQueueAsync(
+        string queueName,
+        ServiceBusReceivedMessage[] messages)
+        => ExecuteBatchQueueAsync<object>(queueName, messages);
+
+    /// <summary>
+    /// Convenience overload of <see cref="ExecuteTopicAsync{T}"/> for topic-triggered functions
+    /// whose return value (output binding) is not relevant to the test.
+    /// </summary>
+    /// <param name="topicName">Topic name configured on the trigger.</param>
+    /// <param name="message">The pre-built message to pass directly to the function.</param>
+    /// <param name="subscriptionName">
+    /// Optional subscription filter. <see langword="null"/> executes all subscriptions.
+    /// </param>
+    Task<AzureServiceBusExecutionResult<object>> ExecuteTopicAsync(
+        string topicName,
+        ServiceBusReceivedMessage message,
+        string? subscriptionName = null)
+        => ExecuteTopicAsync<object>(topicName, message, subscriptionName);
+
+    /// <summary>
+    /// Convenience overload of <see cref="ExecuteBatchTopicAsync{T}"/> for batched topic functions
+    /// whose return value (output binding) is not relevant to the test.
+    /// </summary>
+    /// <param name="topicName">Topic name configured on the trigger.</param>
+    /// <param name="messages">The pre-built messages to pass directly to the function.</param>
+    /// <param name="subscriptionName">Optional subscription filter.</param>
+    Task<AzureServiceBusExecutionResult<object>> ExecuteBatchTopicAsync(
+        string topicName,
+        ServiceBusReceivedMessage[] messages,
+        string? subscriptionName = null)
+        => ExecuteBatchTopicAsync<object>(topicName, messages, subscriptionName);
 }

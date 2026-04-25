@@ -287,12 +287,46 @@ public async Task GetOrder_WithRouteParameters_ReturnsOk()
 - ✅ Return values / output bindings from Azure Service Bus triggered functions
 - ✅ Direct `ServiceBusReceivedMessage` pass-through (full metadata control)
 - ✅ Environment-variable queue/topic name resolution (`%VariableName%` syntax)
+- ✅ Non-generic execute overloads (no type argument needed when return value is irrelevant)
 
 ## Azure Service Bus Testing
 
 Use `CreateAzureServiceBusFunctionExecutor()` to obtain an `IAzureServiceBusFunctionExecutor`
 and execute Azure Service Bus triggered functions directly in-process without connecting to
 a real Azure Service Bus namespace.
+
+### Non-generic overloads (no return value)
+
+When the function's output binding is not relevant to the test, omit the type argument entirely.
+The four non-generic overloads return `AzureServiceBusExecutionResult<object>`, so
+`MessageActions` and `SessionMessageActions` are still accessible for assertion.
+
+```csharp
+// Queue — no type argument
+var result = await executor.ExecuteQueueAsync("orders", message);
+Assert.Single(result.MessageActions.CompletedMessages);
+
+// Batched queue — no type argument
+var result = await executor.ExecuteBatchQueueAsync("batch-orders", messages);
+Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
+
+// Topic (all subscriptions) — no type argument
+await executor.ExecuteTopicAsync("events", message);
+
+// Topic (specific subscription) — no type argument
+var result = await executor.ExecuteTopicAsync("events", message,
+    subscriptionName: "analytics-sub");
+Assert.NotNull(result.MessageActions);
+```
+
+When you **do** care about the output binding, pass the expected type as a generic argument
+to get a strongly-typed `ReturnValue` without any cast:
+
+```csharp
+// Strongly-typed return value — no cast needed
+var result = await executor.ExecuteQueueAsync<OrderForwardedEvent>("forward-orders", message);
+Assert.Equal(42, result.ReturnValue!.OriginalOrderId);
+```
 
 ### Queue execution
 

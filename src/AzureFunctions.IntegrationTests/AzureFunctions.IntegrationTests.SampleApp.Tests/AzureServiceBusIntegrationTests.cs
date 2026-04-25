@@ -535,5 +535,101 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // The completed-message reference is the exact same object passed in
         Assert.Same(rawMessage, result.MessageActions.CompletedMessages[0]);
     }
+
+    // ── Non-generic convenience overloads ─────────────────────────────────────
+
+    /// <summary>
+    /// Verifies that the non-generic <c>ExecuteQueueAsync</c> overload (no type argument)
+    /// executes the function and still provides access to <see cref="AzureServiceBusExecutionResult{T}.MessageActions"/>
+    /// for settlement assertions, without requiring a type argument.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteQueueAsync_NonGeneric_MessageActionsAvailable()
+    {
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var order = new OrderCreatedEvent { OrderId = 20, CustomerName = "Ivan", TotalAmount = 50m };
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(order),
+            messageId: "ng-queue-001");
+
+        // Act — no type argument needed
+        var result = await executor.ExecuteQueueAsync("orders-manual", rawMessage);
+
+        Assert.Single(OrderAzureServiceBusFunctions.ActionProcessedOrders);
+        Assert.Equal(20, OrderAzureServiceBusFunctions.ActionProcessedOrders[0].OrderId);
+        Assert.Single(result.MessageActions.CompletedMessages);
+    }
+
+    /// <summary>
+    /// Verifies that the non-generic <c>ExecuteBatchQueueAsync</c> overload executes a batched
+    /// function and returns <see cref="AzureServiceBusExecutionResult{T}.MessageActions"/>
+    /// without requiring a type argument.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteBatchQueueAsync_NonGeneric_MessageActionsAvailable()
+    {
+        OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
+
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var messages = new[]
+        {
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1, CustomerName = "Jack", TotalAmount = 10m }),
+                messageId: "ng-batch-001"),
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 2, CustomerName = "Kate", TotalAmount = 20m }),
+                messageId: "ng-batch-002"),
+        };
+
+        // Act — no type argument needed
+        var result = await executor.ExecuteBatchQueueAsync("batch-orders", messages);
+
+        Assert.Equal(2, OrderAzureServiceBusFunctions.BatchReceivedMessages.Count);
+        Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
+    }
+
+    /// <summary>
+    /// Verifies that the non-generic <c>ExecuteTopicAsync</c> overload with a specific subscription
+    /// executes the correct subscription function without requiring a type argument.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteTopicAsync_NonGeneric_SpecificSubscription_Executed()
+    {
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString("{}"),
+            subject: "event.ng-test",
+            messageId: "ng-topic-001");
+
+        // Act — no type argument needed
+        var result = await executor.ExecuteTopicAsync("events", rawMessage,
+            subscriptionName: "integration-tests-sub");
+
+        Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
+        Assert.Equal("event.ng-test", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
+        Assert.Empty(OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects);
+        Assert.NotNull(result.MessageActions);
+    }
+
+    /// <summary>
+    /// Verifies that the non-generic <c>ExecuteTopicAsync</c> overload without a subscription filter
+    /// executes ALL topic subscriptions without requiring a type argument.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteTopicAsync_NonGeneric_NoFilter_AllSubscriptionsExecuted()
+    {
+        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString("{}"),
+            subject: "event.ng-broadcast",
+            messageId: "ng-topic-002");
+
+        // Act — no type argument, no subscription filter
+        await executor.ExecuteTopicAsync("events", rawMessage);
+
+        Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
+        Assert.Single(OrderAzureServiceBusFunctions.ProcessedAnalyticsSubjects);
+    }
 }
+
 
