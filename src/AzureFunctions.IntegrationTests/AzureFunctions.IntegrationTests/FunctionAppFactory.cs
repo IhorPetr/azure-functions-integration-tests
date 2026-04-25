@@ -1,11 +1,14 @@
 using System.Reflection;
 using Azure.Messaging.ServiceBus;
 using AzureFunctions.IntegrationTests.AzureServiceBus;
+using AzureFunctions.IntegrationTests.Durable;
 using AzureFunctions.IntegrationTests.Extensions;
 using AzureFunctions.IntegrationTests.Http;
 using AzureFunctions.IntegrationTests.Models;
+using AzureFunctions.IntegrationTests.Timer;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.DurableTask.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -25,6 +28,8 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
     private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<string, List<FunctionInfo>> _functionRoutes;
     private readonly List<AzureServiceBusFunctionInfo> _serviceBusFunctions;
+    private readonly List<DurableFunctionInfo> _durableFunctions;
+    private readonly List<TimerFunctionInfo> _timerFunctions;
     private bool _disposed;
 
     /// <summary>
@@ -44,6 +49,12 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
         // Discover all Azure Service Bus-triggered functions
         _serviceBusFunctions = DiscoverAzureServiceBusFunctions();
 
+        // Discover all Durable Functions (orchestrators, activities, entities)
+        _durableFunctions = DiscoverDurableFunctions();
+
+        // Discover all timer-triggered functions
+        _timerFunctions = DiscoverTimerFunctions();
+
         // Use the host's service provider
         _serviceProvider = _host.Services;
 
@@ -57,15 +68,37 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
     public IServiceProvider Services => _serviceProvider;
     
     /// <summary>
-    /// Creates an <see cref="IAzureServiceBusFunctionExecutor"/> that can execute Azure Service Bus
+    /// Creates an <see cref="IAzureServiceBusExecutor"/> that can execute Azure Service Bus
     /// triggered functions in-process without a live Azure Service Bus namespace.
     /// </summary>
     /// <returns>
-    /// A configured <see cref="IAzureServiceBusFunctionExecutor"/> instance scoped to the discovered
+    /// A configured <see cref="IAzureServiceBusExecutor"/> instance scoped to the discovered
     /// Service Bus triggered functions in the entry-point assembly.
     /// </returns>
-    public IAzureServiceBusFunctionExecutor CreateAzureServiceBusFunctionExecutor()
-        => new AzureServiceBusFunctionExecutor(_serviceProvider, _serviceBusFunctions);
+    public IAzureServiceBusExecutor CreateAzureServiceBusExecutor()
+        => new AzureServiceBusExecutor(_serviceProvider, _serviceBusFunctions);
+
+    /// <summary>
+    /// Creates an <see cref="IDurableFunctionExecutor"/> that can invoke Durable Functions
+    /// orchestrators and activities in-process without a live Durable Task hub.
+    /// </summary>
+    /// <returns>
+    /// A configured <see cref="IDurableFunctionExecutor"/> instance scoped to the discovered
+    /// Durable Functions in the entry-point assembly.
+    /// </returns>
+    public IDurableFunctionExecutor CreateDurableFunctionExecutor()
+        => new DurableFunctionExecutor(_serviceProvider, _durableFunctions);
+
+    /// <summary>
+    /// Creates an <see cref="ITimerFunctionExecutor"/> that can fire timer-triggered functions
+    /// in-process without a live timer scheduler.
+    /// </summary>
+    /// <returns>
+    /// A configured <see cref="ITimerFunctionExecutor"/> instance scoped to the discovered
+    /// timer-triggered functions in the entry-point assembly.
+    /// </returns>
+    public ITimerFunctionExecutor CreateTimerFunctionExecutor()
+        => new TimerFunctionExecutor(_serviceProvider, _timerFunctions);
 
     /// <summary>
     /// Creates an HttpClient configured to make requests to the in-memory test server
@@ -319,6 +352,88 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
         }
 
         return path;
+    }
+
+    /// <summary>
+    /// Discovers all Durable Functions (orchestrators, activities, and entities) in the
+    /// entry-point assembly by scanning for <c>[OrchestrationTrigger]</c>,
+    /// <c>[ActivityTrigger]</c>, and <c>[EntityTrigger]</c> parameter attributes.
+    /// </summary>
+    private List<DurableFunctionInfo> DiscoverDurableFunctions()
+    {
+        var result = new List<DurableFunctionInfo>();
+        var assembly = typeof(TEntryPoint).Assembly;
+
+        foreach (var type in assembly.GetTypes())
+        {
+            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var functionAttr = method.GetCustomAttribute<FunctionAttribute>();
+                if (functionAttr == null) continue;
+
+                foreach (var param in method.GetParameters())
+                {
+                    DurableTriggerKind? kind = null;
+
+                    if (param.GetCustomAttribute<OrchestrationTriggerAttribute>() != null)
+                        kind = DurableTriggerKind.Orchestration;
+                    else if (param.GetCustomAttribute<ActivityTriggerAttribute>() != null)
+                        kind = DurableTriggerKind.Activity;
+                    else if (param.GetCustomAttribute<EntityTriggerAttribute>() != null)
+                        kind = DurableTriggerKind.Entity;
+
+                    if (kind is null) continue;
+
+                    result.Add(new DurableFunctionInfo
+                    {
+                        FunctionType = type,
+                        Method = method,
+                        FunctionName = functionAttr.Name,
+                        TriggerParameter = param,
+                        Kind = kind.Value,
+                    });
+                    break; // only one trigger per function
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Discovers all timer-triggered functions in the entry-point assembly by scanning for
+    /// parameters decorated with <see cref="TimerTriggerAttribute"/>.
+    /// </summary>
+    private List<TimerFunctionInfo> DiscoverTimerFunctions()
+    {
+        var result = new List<TimerFunctionInfo>();
+        var assembly = typeof(TEntryPoint).Assembly;
+
+        foreach (var type in assembly.GetTypes())
+        {
+            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var functionAttr = method.GetCustomAttribute<FunctionAttribute>();
+                if (functionAttr == null) continue;
+
+                foreach (var param in method.GetParameters())
+                {
+                    var timerAttr = param.GetCustomAttribute<TimerTriggerAttribute>();
+                    if (timerAttr == null) continue;
+
+                    result.Add(new TimerFunctionInfo
+                    {
+                        FunctionType = type,
+                        Method = method,
+                        FunctionName = functionAttr.Name,
+                        Schedule = timerAttr.Schedule,
+                    });
+                    break;
+                }
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

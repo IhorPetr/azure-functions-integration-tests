@@ -14,9 +14,9 @@ namespace AzureFunctions.IntegrationTests.AzureServiceBus;
 /// Executes Azure Functions with a <see cref="ServiceBusTriggerAttribute"/> bound
 /// to either a <b>queue</b> or a <b>topic subscription</b>, enabling in-process integration
 /// testing without a live Azure Service Bus namespace.
-/// Obtain an instance via <c>FunctionAppFactory.CreateAzureServiceBusFunctionExecutor()</c>.
+/// Obtain an instance via <c>FunctionAppFactory.CreateAzureServiceBusExecutor()</c>.
 /// </summary>
-internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunctionExecutor
+internal sealed class AzureServiceBusExecutor : IAzureServiceBusExecutor
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<string, AzureServiceBusFunctionInfo> _queues;
@@ -24,7 +24,7 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
     // topicName → all subscription functions registered for that topic
     private readonly Dictionary<string, List<AzureServiceBusFunctionInfo>> _topics;
 
-    internal AzureServiceBusFunctionExecutor(
+    internal AzureServiceBusExecutor(
         IServiceProvider serviceProvider,
         IEnumerable<AzureServiceBusFunctionInfo> functions)
     {

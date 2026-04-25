@@ -8,17 +8,17 @@ namespace AzureFunctions.IntegrationTests.AzureServiceBus;
 /// </summary>
 /// <remarks>
 /// Obtain a concrete instance via
-/// <c>FunctionAppFactory&lt;TEntryPoint&gt;.CreateAzureServiceBusFunctionExecutor()</c>.
+/// <c>FunctionAppFactory&lt;TEntryPoint&gt;.CreateAzureServiceBusExecutor()</c>.
 /// The interface can be used in test helpers or custom factory wrappers so that the
 /// executor can be substituted with a test double if needed.
 /// <para>
 /// Each execute method is generic — specify the function's output-binding type as the
 /// type argument to get a strongly-typed <c>ReturnValue</c> without casting.
-/// Use <c>object</c> when the function returns <see langword="void"/> /
+/// Use the non-generic overloads when the function returns <see langword="void"/> /
 /// <see cref="System.Threading.Tasks.Task"/> or when the return value is not relevant to the test.
 /// </para>
 /// </remarks>
-public interface IAzureServiceBusFunctionExecutor
+public interface IAzureServiceBusExecutor
 {
     // ── Queue execution ───────────────────────────────────────────────────────
 

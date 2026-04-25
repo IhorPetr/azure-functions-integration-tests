@@ -5,7 +5,7 @@ using AzureFunctions.IntegrationTests.Mocks.AzureServiceBus;
 namespace AzureFunctions.IntegrationTests.SampleApp.Tests;
 
 /// <summary>
-/// Integration tests for <see cref="AzureServiceBusFunctionExecutor"/>.
+/// Integration tests for <see cref="AzureServiceBusExecutor"/>.
 /// Covers queue execution, topic execution, session-enabled queues, batched queues,
 /// return-value / output bindings, manual message settlement (Complete / DeadLetter / Abandon / Defer),
 /// environment-variable queue name resolution, and direct <see cref="ServiceBusReceivedMessage"/> overloads.
@@ -44,7 +44,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public async Task ExecuteTopicAsync_UnknownTopic_ShouldThrow()
     {
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(new { }),
             subject: "order.direct",
@@ -58,7 +58,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public async Task ExecuteTopicAsync_UnknownSubscription_ShouldThrow()
     {
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(new { }),
             subject: "order.direct",
@@ -81,7 +81,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.SessionProcessedOrders.Clear();
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var order = new OrderCreatedEvent { OrderId = 42, CustomerName = "Alice", TotalAmount = 99.99m };
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(order),
@@ -112,7 +112,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public async Task SessionQueue_IsSessionsEnabled_SessionActionsArePopulated()
     {
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(
                 new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob", TotalAmount = 10m }),
@@ -136,7 +136,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var rawMessages = new[]
         {
             ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -172,7 +172,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     {
         OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var rawMessages = new[]
         {
             ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -199,7 +199,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.ForwardedOrders.Clear();
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var order = new OrderCreatedEvent { OrderId = 7, CustomerName = "Grace", TotalAmount = 55m };
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(order),
@@ -230,7 +230,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.ActionProcessedOrders.Clear();
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var order = new OrderCreatedEvent { OrderId = 10, CustomerName = "Henry", TotalAmount = 100m };
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(order),
@@ -258,7 +258,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         // Arrange
         OrderAzureServiceBusFunctions.ActionProcessedOrders.Clear();
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         // TotalAmount = 0 should trigger dead-lettering
         var invalidOrder = new OrderCreatedEvent { OrderId = 0, CustomerName = "Invalid", TotalAmount = 0 };
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -367,7 +367,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         try
         {
             using var isolatedFactory = new FunctionAppFactory<Program>();
-            var executor = isolatedFactory.CreateAzureServiceBusFunctionExecutor();
+            var executor = isolatedFactory.CreateAzureServiceBusExecutor();
 
             var order = new OrderCreatedEvent { OrderId = 99, CustomerName = "EnvTest", TotalAmount = 1m };
             var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -396,7 +396,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         Environment.SetEnvironmentVariable("TestQueueName", null);
 
         using var isolatedFactory = new FunctionAppFactory<Program>();
-        var executor = isolatedFactory.CreateAzureServiceBusFunctionExecutor();
+        var executor = isolatedFactory.CreateAzureServiceBusExecutor();
 
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1, CustomerName = "Test", TotalAmount = 1m }),
@@ -420,7 +420,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             body: BinaryData.FromString("{}"),
             subject: "event.shipped");
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
 
         await executor.ExecuteTopicAsync<object>("events", rawMessage, subscriptionName: "integration-tests-sub");
 
@@ -440,7 +440,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             body: BinaryData.FromString("{}"),
             subject: "event.broadcast");
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
 
         await executor.ExecuteTopicAsync<object>("events", rawMessage);
 
@@ -452,7 +452,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
     /// <summary>
     /// Verifies that a batch of pre-built <see cref="ServiceBusReceivedMessage"/> instances
-    /// passed to <see cref="IAzureServiceBusFunctionExecutor.ExecuteBatchQueueAsync"/>
+    /// passed to <see cref="IAzureServiceBusExecutor.ExecuteBatchQueueAsync"/>
     /// are forwarded verbatim to the function without re-serialisation.
     /// </summary>
     [Fact]
@@ -469,7 +469,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
                 body: BinaryData.FromString("""{"orderId":2}"""), messageId: "b-002"),
         };
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
 
         // Act
         var result = await executor.ExecuteBatchQueueAsync<object>("batch-orders", messages);
@@ -480,7 +480,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     /// <summary>
-    /// Verifies that <see cref="IAzureServiceBusFunctionExecutor.ExecuteBatchTopicAsync"/>
+    /// Verifies that <see cref="IAzureServiceBusExecutor.ExecuteBatchTopicAsync"/>
     /// is not yet supported for non-batched topic functions and throws
     /// <see cref="InvalidOperationException"/> when the matched subscription function
     /// is not configured with <c>IsBatched = true</c>.
@@ -494,7 +494,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
                 body: BinaryData.FromString("{}"), subject: "event.test", messageId: "bt-001"),
         };
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
 
         // The "events" topic subscriptions are not configured with IsBatched = true
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -524,7 +524,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             messageId: "msg-props-001",
             correlationId: "corr-props-001");
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var result = await executor.ExecuteQueueAsync<object>("orders-manual", rawMessage);
 
         // The function deserialised the body and processed the order
@@ -546,7 +546,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public async Task ExecuteQueueAsync_NonGeneric_MessageActionsAvailable()
     {
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var order = new OrderCreatedEvent { OrderId = 20, CustomerName = "Ivan", TotalAmount = 50m };
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(order),
@@ -570,7 +570,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     {
         OrderAzureServiceBusFunctions.BatchReceivedMessages.Clear();
 
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var messages = new[]
         {
             ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -595,7 +595,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public async Task ExecuteTopicAsync_NonGeneric_SpecificSubscription_Executed()
     {
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString("{}"),
             subject: "event.ng-test",
@@ -618,7 +618,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     [Fact]
     public async Task ExecuteTopicAsync_NonGeneric_NoFilter_AllSubscriptionsExecuted()
     {
-        var executor = _factory.CreateAzureServiceBusFunctionExecutor();
+        var executor = _factory.CreateAzureServiceBusExecutor();
         var rawMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString("{}"),
             subject: "event.ng-broadcast",
