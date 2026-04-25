@@ -104,7 +104,7 @@ public class AzureServiceBusFunctionExecutor : IAzureServiceBusFunctionExecutor
         }
 
         var sbMessage = ServiceBusMessageBuilder.Build(message, messageType, applicationProperties);
-        return await ServiceBusMessageBuilder.InvokeAsync(info, sbMessage, null, _serviceProvider);
+        return await ServiceBusMessageBuilder.ExecuteAsync(info, sbMessage, null, _serviceProvider);
     }
 
     // ── Batched queue execution ───────────────────────────────────────────────
@@ -152,7 +152,7 @@ public class AzureServiceBusFunctionExecutor : IAzureServiceBusFunctionExecutor
             .Select(m => ServiceBusMessageBuilder.Build(m, messageType, applicationProperties))
             .ToList();
 
-        return await ServiceBusMessageBuilder.InvokeAsync(info, batch[0], batch, _serviceProvider);
+        return await ServiceBusMessageBuilder.ExecuteAsync(info, batch[0], batch, _serviceProvider);
     }
 
     // ── Topic execution ───────────────────────────────────────────────────────
@@ -257,7 +257,7 @@ public class AzureServiceBusFunctionExecutor : IAzureServiceBusFunctionExecutor
 
         AzureServiceBusExecutionResult? lastResult = null;
         foreach (var target in targets)
-            lastResult = await ServiceBusMessageBuilder.InvokeAsync(target, sbMessage, null, _serviceProvider);
+            lastResult = await ServiceBusMessageBuilder.ExecuteAsync(target, sbMessage, null, _serviceProvider);
 
         return lastResult!;
     }
@@ -322,7 +322,7 @@ public class AzureServiceBusFunctionExecutor : IAzureServiceBusFunctionExecutor
                 throw new InvalidOperationException(
                     $"Topic function '{target.FunctionName}' is not configured for batched processing.");
             }
-            lastResult = await ServiceBusMessageBuilder.InvokeAsync(target, batch[0], batch, _serviceProvider);
+            lastResult = await ServiceBusMessageBuilder.ExecuteAsync(target, batch[0], batch, _serviceProvider);
         }
 
         return lastResult!;
@@ -357,7 +357,7 @@ internal static class ServiceBusMessageBuilder
             messageId: Guid.NewGuid().ToString());
     }
 
-    internal static async Task<AzureServiceBusExecutionResult> InvokeAsync(
+    internal static async Task<AzureServiceBusExecutionResult> ExecuteAsync(
         AzureServiceBusFunctionInfo functionInfo,
         ServiceBusReceivedMessage message,
         IReadOnlyList<ServiceBusReceivedMessage>? batchMessages,
