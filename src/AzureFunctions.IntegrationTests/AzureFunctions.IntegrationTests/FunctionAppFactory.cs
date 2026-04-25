@@ -1,4 +1,6 @@
 using System.Reflection;
+using Azure.Messaging.ServiceBus;
+using AzureFunctions.IntegrationTests.AzureServiceBus;
 using AzureFunctions.IntegrationTests.Extensions;
 using AzureFunctions.IntegrationTests.Http;
 using AzureFunctions.IntegrationTests.Models;
@@ -22,6 +24,7 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
     private readonly IHost _host;
     private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<string, List<FunctionInfo>> _functionRoutes;
+    private readonly List<AzureServiceBusFunctionInfo> _serviceBusFunctions;
     private bool _disposed;
 
     /// <summary>
@@ -37,6 +40,9 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
 
         // Discover all Azure Functions and their routes
         _functionRoutes = DiscoverFunctionRoutes();
+        
+        // Discover all Azure Service Bus-triggered functions
+        _serviceBusFunctions = DiscoverAzureServiceBusFunctions();
 
         // Use the host's service provider
         _serviceProvider = _host.Services;
@@ -49,6 +55,16 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
     /// Gets the service provider from the hosted application
     /// </summary>
     public IServiceProvider Services => _serviceProvider;
+    
+    /// <summary>
+    /// Creates a <see cref="AzureServiceBusDispatcher"/> that can invoke both queue-triggered and
+    /// topic-triggered functions discovered in the entry-point assembly without a live
+    /// Azure Service Bus. Use <see cref="AzureServiceBusDispatcher.DispatchToQueueAsync"/> for
+    /// queue triggers and <see cref="AzureServiceBusDispatcher.DispatchToTopicAsync"/> for topic
+    /// subscription triggers.
+    /// </summary>
+    public AzureServiceBusDispatcher CreateAzureServiceBusDispatcher()
+        => new AzureServiceBusDispatcher(_serviceProvider, _serviceBusFunctions);
 
     /// <summary>
     /// Creates an HttpClient configured to make requests to the in-memory test server
@@ -229,6 +245,79 @@ public class FunctionAppFactory<TEntryPoint> : IDisposable where TEntryPoint : c
         }
 
         return routes;
+    }
+    
+        /// <summary>
+    /// Discovers all Azure Functions with an Azure Service Bus trigger binding in the entry-point assembly
+    /// </summary>
+    private List<AzureServiceBusFunctionInfo> DiscoverAzureServiceBusFunctions()
+    {
+        var result = new List<AzureServiceBusFunctionInfo>();
+        var assembly = typeof(TEntryPoint).Assembly;
+
+        foreach (var type in assembly.GetTypes())
+        {
+            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var functionAttr = method.GetCustomAttribute<FunctionAttribute>();
+                if (functionAttr == null) continue;
+
+                foreach (var param in method.GetParameters())
+                {
+                    var triggerAttr = param.GetCustomAttribute<ServiceBusTriggerAttribute>();
+                    if (triggerAttr == null) continue;
+
+                    var entityPath = !string.IsNullOrEmpty(triggerAttr.TopicName)
+                        ? ResolveServiceBusEntityPath(triggerAttr.TopicName)
+                        : ResolveServiceBusEntityPath(triggerAttr.QueueName ?? string.Empty);
+
+                    // IsBatched: detected from the trigger parameter type being a collection
+                    var isBatched =
+                        param.ParameterType == typeof(IReadOnlyList<ServiceBusReceivedMessage>)
+                        || param.ParameterType == typeof(ServiceBusReceivedMessage[]);
+
+                    // IsSessionsEnabled: detected from the method having a session actions parameter
+                    var isSessionsEnabled = method.GetParameters()
+                        .Any(p => p.ParameterType == typeof(ServiceBusSessionMessageActions));
+
+                    result.Add(new AzureServiceBusFunctionInfo
+                    {
+                        FunctionType = type,
+                        Method = method,
+                        EntityPath = entityPath,
+                        SubscriptionName = triggerAttr.SubscriptionName,
+                        FunctionName = functionAttr.Name,
+                        TriggerParameter = param,
+                        IsTopicTrigger = !string.IsNullOrEmpty(triggerAttr.TopicName),
+                        IsBatched = isBatched,
+                        IsSessionsEnabled = isSessionsEnabled,
+                    });
+
+                    break; // only one trigger per function
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resolves an Azure Service Bus entity path that may use the <c>%VariableName%</c>
+    /// app-setting / environment-variable syntax supported by the Azure Functions runtime.
+    /// If the path is wrapped in <c>%…%</c> the matching environment variable value is returned;
+    /// if the variable is not set the raw placeholder is returned unchanged.
+    /// </summary>
+    /// <param name="path">The raw queue name, topic name, or <c>%EnvVarName%</c> token.</param>
+    /// <returns>The resolved entity path.</returns>
+    private static string ResolveServiceBusEntityPath(string path)
+    {
+        if (path.Length > 2 && path[0] == '%' && path[^1] == '%')
+        {
+            var variableName = path[1..^1];
+            return Environment.GetEnvironmentVariable(variableName) ?? path;
+        }
+
+        return path;
     }
 
     /// <summary>

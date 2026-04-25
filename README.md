@@ -13,6 +13,7 @@ A testing library for Azure Functions v4 (isolated worker process model) that pr
 - 📝 **Route parameter support** - Handles complex routes with parameters like `{id}`, `{email}`, etc.
 - ⚙️ **Customizable** - Virtual methods to override host configuration
 - 🔄 **HttpClient integration** - Use familiar HttpClient for testing
+- 📨 **Azure Service Bus testing** - Dispatch messages to queue/topic-triggered functions without a real Service Bus namespace
 
 ## Installation
 
@@ -278,12 +279,97 @@ public async Task GetOrder_WithRouteParameters_ReturnsOk()
 - ✅ Dependency injection
 - ✅ Custom configuration
 - ✅ Environment variables
+- ✅ Azure Service Bus queue triggers (single message & batched)
+- ✅ Azure Service Bus topic/subscription triggers
+- ✅ Session-enabled queues (`IsSessionsEnabled = true`)
+- ✅ Manual message settlement via `ServiceBusMessageActions` (Complete, DeadLetter, Abandon, Defer)
+- ✅ Session state management via `ServiceBusSessionMessageActions`
+- ✅ Return values / output bindings from Service Bus triggered functions
+
+## Azure Service Bus Testing
+
+Use `CreateAzureServiceBusDispatcher()` to dispatch messages directly to Service Bus triggered functions
+without connecting to a real Azure Service Bus namespace.
+
+### Queue dispatch
+
+```csharp
+public class OrderFunctionTests : IClassFixture<FunctionAppFactory<Program>>
+{
+    private readonly FunctionAppFactory<Program> _factory;
+
+    public OrderFunctionTests(FunctionAppFactory<Program> factory) => _factory = factory;
+
+    [Fact]
+    public async Task ProcessOrder_QueueTrigger_StoresOrder()
+    {
+        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+
+        await dispatcher.DispatchToQueueAsync("orders", new OrderCreatedEvent { OrderId = 1 });
+
+        Assert.Single(OrderFunctions.ProcessedOrders);
+    }
+}
+```
+
+### Topic / subscription dispatch
+
+```csharp
+// Invoke ALL subscriptions registered for the topic
+await dispatcher.DispatchToTopicAsync("events", new { EventId = 1 }, messageType: "OrderShipped");
+
+// Invoke only a specific subscription
+await dispatcher.DispatchToTopicAsync("events", new { EventId = 2 },
+    subscriptionName: "analytics-sub", messageType: "OrderUpdated");
+```
+
+### Batched queue
+
+```csharp
+var orders = new[] { new OrderCreatedEvent { OrderId = 1 }, new OrderCreatedEvent { OrderId = 2 } };
+var result = await dispatcher.DispatchBatchToQueueAsync("batch-orders", orders);
+
+Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
+```
+
+### Session-enabled queue
+
+```csharp
+var result = await dispatcher.DispatchToQueueAsync("session-orders", order);
+
+Assert.NotNull(result.SessionMessageActions);
+Assert.Equal("42", result.SessionMessageActions.SessionState!.ToString());
+Assert.Single(result.MessageActions.CompletedMessages);
+```
+
+### Asserting message settlement
+
+The `AzureServiceBusDispatchResult` returned by every dispatch method exposes:
+
+| Property | Description |
+|---|---|
+| `ReturnValue` | Function's return value (output binding) |
+| `MessageActions` | Spy recording Complete / DeadLetter / Abandon / Defer calls |
+| `SessionMessageActions` | Spy recording session-state and session-lock calls (`null` for non-session functions) |
+
+```csharp
+// Check dead-letter
+var result = await dispatcher.DispatchToQueueAsync("orders-manual", invalidOrder);
+Assert.Single(result.MessageActions.DeadLetteredMessages);
+var (_, reason, description, _) = result.MessageActions.DeadLetteredMessages[0];
+Assert.Equal("InvalidOrder", reason);
+
+// Check return value (output binding)
+var result = await dispatcher.DispatchToQueueAsync("forward-orders", order);
+var forwarded = Assert.IsType<OrderForwardedEvent>(result.ReturnValue);
+Assert.Equal(order.OrderId, forwarded.OriginalOrderId);
+```
 
 ## Limitations
 
-- Only supports HTTP-triggered functions
-- Timer, Queue, Blob, and other trigger types are not supported
 - Does not test the actual HTTP binding (e.g., authentication middleware at the HTTP level)
+- Timer, Blob, Event Hub, and other non-HTTP / non-Service-Bus trigger types are not yet supported
+- `DispatchBatchToTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
 
 ## Example Project Structure
 

@@ -48,5 +48,11 @@ public class FunctionAppFactoryTests : IClassFixture<FunctionAppFactory<Program>
         Assert.Equal(customUri, client.BaseAddress);
     }
 
- 
+    [Fact]
+    public void Factory_ShouldCreateServiceBusDispatcher()
+    {
+        var dispatcher = _factory.CreateAzureServiceBusDispatcher();
+
+        Assert.NotNull(dispatcher);
+    }
 }
