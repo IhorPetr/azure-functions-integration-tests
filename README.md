@@ -312,7 +312,8 @@ public class OrderFunctionTests : IClassFixture<FunctionAppFactory<Program>>
             body: BinaryData.FromObjectAsJson(new OrderCreatedEvent { OrderId = 1 }),
             messageId: "msg-001");
 
-        await executor.ExecuteQueueAsync("orders", message);
+        // Use object when the function's return value is not relevant to the test
+        await executor.ExecuteQueueAsync<object>("orders", message);
 
         Assert.Single(OrderFunctions.ProcessedOrders);
     }
@@ -323,13 +324,13 @@ public class OrderFunctionTests : IClassFixture<FunctionAppFactory<Program>>
 
 ```csharp
 // Execute ALL subscriptions registered for the topic
-await executor.ExecuteTopicAsync("events",
+await executor.ExecuteTopicAsync<object>("events",
     ServiceBusModelFactory.ServiceBusReceivedMessage(
         body: BinaryData.FromObjectAsJson(new { EventId = 1 }),
         subject: "OrderShipped"));
 
 // Execute only a specific subscription
-await executor.ExecuteTopicAsync("events",
+await executor.ExecuteTopicAsync<object>("events",
     ServiceBusModelFactory.ServiceBusReceivedMessage(
         body: BinaryData.FromObjectAsJson(new { EventId = 2 }),
         subject: "OrderUpdated"),
@@ -349,7 +350,7 @@ var messages = new[]
         messageId: "msg-002"),
 };
 
-var result = await executor.ExecuteBatchQueueAsync("batch-orders", messages);
+var result = await executor.ExecuteBatchQueueAsync<object>("batch-orders", messages);
 
 Assert.Equal(2, result.MessageActions.CompletedMessages.Count);
 ```
@@ -361,7 +362,7 @@ var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
     body: BinaryData.FromObjectAsJson(order),
     messageId: "msg-session-001");
 
-var result = await executor.ExecuteQueueAsync("session-orders", message);
+var result = await executor.ExecuteQueueAsync<object>("session-orders", message);
 
 Assert.NotNull(result.SessionMessageActions);
 Assert.Equal("42", result.SessionMessageActions.SessionState!.ToString());
@@ -370,25 +371,28 @@ Assert.Single(result.MessageActions.CompletedMessages);
 
 ### Asserting message settlement
 
-The `AzureServiceBusExecutionResult` returned by every execution method exposes:
+The `AzureServiceBusExecutionResult<T>` returned by every execution method exposes:
 
 | Property | Description |
 |---|---|
-| `ReturnValue` | Function's return value (output binding), or `null` for `void`/`Task` functions |
+| `ReturnValue` | Strongly-typed return value of the function (output binding); `null` for `void`/`Task` functions |
 | `MessageActions` | Spy recording Complete / DeadLetter / Abandon / Defer calls |
 | `SessionMessageActions` | Spy recording session-state and session-lock calls (`null` for non-session functions) |
 
+Specify the function's output-binding type as the generic argument to get a strongly-typed
+`ReturnValue` without casting. Use `object` when the return value is not relevant to the test.
+
 ```csharp
-// Check dead-letter
-var result = await executor.ExecuteQueueAsync("orders-manual", invalidMessage);
+// Check dead-letter — use object when the return value is not relevant
+var result = await executor.ExecuteQueueAsync<object>("orders-manual", invalidMessage);
 Assert.Single(result.MessageActions.DeadLetteredMessages);
 var (_, reason, description, _) = result.MessageActions.DeadLetteredMessages[0];
 Assert.Equal("InvalidOrder", reason);
 
-// Check return value (output binding)
-var result = await executor.ExecuteQueueAsync("forward-orders", message);
-var forwarded = Assert.IsType<OrderForwardedEvent>(result.ReturnValue);
-Assert.Equal(order.OrderId, forwarded.OriginalOrderId);
+// Check return value (output binding) — specify the expected type; no cast required
+var result = await executor.ExecuteQueueAsync<OrderForwardedEvent>("forward-orders", message);
+Assert.NotNull(result.ReturnValue);               // ReturnValue is already OrderForwardedEvent
+Assert.Equal(order.OrderId, result.ReturnValue.OriginalOrderId);
 ```
 
 ### Direct `ServiceBusReceivedMessage` pass-through
@@ -406,18 +410,18 @@ var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
     correlationId: "trace-abc",
     properties: new Dictionary<string, object> { ["tenantId"] = "tenant-xyz" });
 
-// Single queue message
-var result = await executor.ExecuteQueueAsync("orders", message);
+// Single queue message — use object when return value is not asserted
+var result = await executor.ExecuteQueueAsync<object>("orders", message);
 
 // Single topic message (specific subscription)
-await executor.ExecuteTopicAsync("events", message, subscriptionName: "analytics-sub");
+await executor.ExecuteTopicAsync<object>("events", message, subscriptionName: "analytics-sub");
 
 // Batched queue
 var batch = new[] { message1, message2 };
-var result = await executor.ExecuteBatchQueueAsync("batch-orders", batch);
+var result = await executor.ExecuteBatchQueueAsync<object>("batch-orders", batch);
 
 // Batched topic
-await executor.ExecuteBatchTopicAsync("events", batch, subscriptionName: "integration-tests-sub");
+await executor.ExecuteBatchTopicAsync<object>("events", batch, subscriptionName: "integration-tests-sub");
 ```
 
 ### Environment-variable queue/topic names
@@ -440,7 +444,7 @@ var executor = factory.CreateAzureServiceBusFunctionExecutor();
 var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
     body: BinaryData.FromObjectAsJson(order));
 
-await executor.ExecuteQueueAsync("my-test-queue", message);
+await executor.ExecuteQueueAsync<object>("my-test-queue", message);
 ```
 
 ## Limitations

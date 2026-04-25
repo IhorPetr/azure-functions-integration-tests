@@ -11,6 +11,12 @@ namespace AzureFunctions.IntegrationTests.AzureServiceBus;
 /// <c>FunctionAppFactory&lt;TEntryPoint&gt;.CreateAzureServiceBusFunctionExecutor()</c>.
 /// The interface can be used in test helpers or custom factory wrappers so that the
 /// executor can be substituted with a test double if needed.
+/// <para>
+/// Each execute method is generic — specify the function's output-binding type as the
+/// type argument to get a strongly-typed <c>ReturnValue</c> without casting.
+/// Use <c>object</c> when the function returns <see langword="void"/> /
+/// <see cref="System.Threading.Tasks.Task"/> or when the return value is not relevant to the test.
+/// </para>
 /// </remarks>
 public interface IAzureServiceBusFunctionExecutor
 {
@@ -22,13 +28,17 @@ public interface IAzureServiceBusFunctionExecutor
     /// Use this overload when you need full control over message metadata (subject, message-id,
     /// correlation-id, application properties, etc.).
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
     /// <param name="message">The pre-built message to pass directly to the function.</param>
     /// <returns>
-    /// An <see cref="AzureServiceBusExecutionResult"/> containing the function's return value
+    /// An <see cref="AzureServiceBusExecutionResult{T}"/> containing the strongly-typed return value
     /// (output binding) and the recorded message-settlement actions for assertion.
     /// </returns>
-    Task<AzureServiceBusExecutionResult> ExecuteQueueAsync(
+    Task<AzureServiceBusExecutionResult<T>> ExecuteQueueAsync<T>(
         string queueName,
         ServiceBusReceivedMessage message);
 
@@ -39,9 +49,13 @@ public interface IAzureServiceBusFunctionExecutor
     /// with a batch of pre-built <see cref="ServiceBusReceivedMessage"/> instances.
     /// Use this overload when you need full control over individual message metadata.
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="queueName">Queue name configured on the trigger (after env-var resolution).</param>
     /// <param name="messages">The pre-built messages to pass directly to the function.</param>
-    Task<AzureServiceBusExecutionResult> ExecuteBatchQueueAsync(
+    Task<AzureServiceBusExecutionResult<T>> ExecuteBatchQueueAsync<T>(
         string queueName,
         ServiceBusReceivedMessage[] messages);
 
@@ -52,6 +66,10 @@ public interface IAzureServiceBusFunctionExecutor
     /// with a pre-built <see cref="ServiceBusReceivedMessage"/>.
     /// Use this overload when you need full control over message metadata.
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="topicName">Topic name configured on the trigger.</param>
     /// <param name="message">The pre-built message to pass directly to the function.</param>
     /// <param name="subscriptionName">
@@ -68,9 +86,9 @@ public interface IAzureServiceBusFunctionExecutor
     /// </list>
     /// </param>
     /// <returns>
-    /// An <see cref="AzureServiceBusExecutionResult"/> from the last matching subscription executed.
+    /// An <see cref="AzureServiceBusExecutionResult{T}"/> from the last matching subscription executed.
     /// </returns>
-    Task<AzureServiceBusExecutionResult> ExecuteTopicAsync(
+    Task<AzureServiceBusExecutionResult<T>> ExecuteTopicAsync<T>(
         string topicName,
         ServiceBusReceivedMessage message,
         string? subscriptionName = null);
@@ -82,10 +100,14 @@ public interface IAzureServiceBusFunctionExecutor
     /// with a batch of pre-built <see cref="ServiceBusReceivedMessage"/> instances.
     /// Use this overload when you need full control over individual message metadata.
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="topicName">Topic name configured on the trigger.</param>
     /// <param name="messages">The pre-built messages to pass directly to the function.</param>
     /// <param name="subscriptionName">Optional subscription filter.</param>
-    Task<AzureServiceBusExecutionResult> ExecuteBatchTopicAsync(
+    Task<AzureServiceBusExecutionResult<T>> ExecuteBatchTopicAsync<T>(
         string topicName,
         ServiceBusReceivedMessage[] messages,
         string? subscriptionName = null);

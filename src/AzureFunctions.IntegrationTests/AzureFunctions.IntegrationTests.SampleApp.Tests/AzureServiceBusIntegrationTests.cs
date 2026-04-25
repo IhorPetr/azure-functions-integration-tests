@@ -52,7 +52,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             correlationId: "corr-001");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => executor.ExecuteTopicAsync("unknown-topic", rawMessage));
+            () => executor.ExecuteTopicAsync<object>("unknown-topic", rawMessage));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             correlationId: "corr-001");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => executor.ExecuteTopicAsync("events", rawMessage, subscriptionName: "nonexistent-sub"));
+            () => executor.ExecuteTopicAsync<object>("events", rawMessage, subscriptionName: "nonexistent-sub"));
     }
 
     // ── Session-enabled queue ─────────────────────────────────────────────────
@@ -90,7 +90,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             correlationId: "corr-session-001");
 
         // Act
-        var result = await executor.ExecuteQueueAsync("session-orders", rawMessage);
+        var result = await executor.ExecuteQueueAsync<object>("session-orders", rawMessage);
 
         // Assert — function executed
         Assert.Single(OrderAzureServiceBusFunctions.SessionProcessedOrders);
@@ -106,7 +106,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
     }
 
     /// <summary>
-    /// Verifies that <see cref="AzureServiceBusExecutionResult.SessionMessageActions"/> is non-null
+    /// Verifies that <see cref="AzureServiceBusExecutionResult{T}.SessionMessageActions"/> is non-null
     /// when the triggered function is configured with <c>IsSessionsEnabled = true</c>.
     /// </summary>
     [Fact]
@@ -118,7 +118,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
                 new OrderCreatedEvent { OrderId = 1, CustomerName = "Bob", TotalAmount = 10m }),
             messageId: "msg-session-002");
 
-        var result = await executor.ExecuteQueueAsync("session-orders", rawMessage);
+        var result = await executor.ExecuteQueueAsync<object>("session-orders", rawMessage);
 
         // SessionMessageActions must be a non-null MockAzureServiceBusSessionMessageActions
         Assert.NotNull(result.SessionMessageActions);
@@ -152,7 +152,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
 
         // Act
-        var result = await executor.ExecuteBatchQueueAsync("batch-orders", rawMessages);
+        var result = await executor.ExecuteBatchQueueAsync<object>("batch-orders", rawMessages);
 
         // Assert — function received the full batch
         Assert.Equal(3, OrderAzureServiceBusFunctions.BatchReceivedMessages.Count);
@@ -180,7 +180,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
                 messageId: "batch-single-001"),
         };
 
-        var result = await executor.ExecuteBatchQueueAsync("batch-orders", rawMessages);
+        var result = await executor.ExecuteBatchQueueAsync<object>("batch-orders", rawMessages);
 
         Assert.Single(OrderAzureServiceBusFunctions.BatchReceivedMessages);
         Assert.Single(result.MessageActions.CompletedMessages);
@@ -190,7 +190,8 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
     /// <summary>
     /// Verifies that a function's return value (output binding) is captured in
-    /// <see cref="AzureServiceBusExecutionResult.ReturnValue"/> and can be cast to the expected type.
+    /// <see cref="AzureServiceBusExecutionResult{T}.ReturnValue"/> as a strongly-typed value,
+    /// without requiring any cast in the test.
     /// </summary>
     [Fact]
     public async Task ForwardOrderQueue_FunctionReturnsForwardedEvent()
@@ -204,18 +205,17 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             body: BinaryData.FromObjectAsJson(order),
             messageId: "forward-001");
 
-        // Act
-        var result = await executor.ExecuteQueueAsync("forward-orders", rawMessage);
+        // Act — specify the expected return type as the generic argument
+        var result = await executor.ExecuteQueueAsync<OrderForwardedEvent>("forward-orders", rawMessage);
 
         // Assert — function captured the order
         Assert.Single(OrderAzureServiceBusFunctions.ForwardedOrders);
         Assert.Equal(7, OrderAzureServiceBusFunctions.ForwardedOrders[0].OrderId);
 
-        // Assert — return value is the forwarded event
+        // Assert — ReturnValue is already strongly typed; no cast required
         Assert.NotNull(result.ReturnValue);
-        var forwarded = Assert.IsType<OrderForwardedEvent>(result.ReturnValue);
-        Assert.Equal(7, forwarded.OriginalOrderId);
-        Assert.Equal("Grace", forwarded.CustomerName);
+        Assert.Equal(7, result.ReturnValue.OriginalOrderId);
+        Assert.Equal("Grace", result.ReturnValue.CustomerName);
     }
 
     // ── Manual settlement (Complete / DeadLetter) ─────────────────────────────
@@ -237,7 +237,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             messageId: "manual-001");
 
         // Act
-        var result = await executor.ExecuteQueueAsync("orders-manual", rawMessage);
+        var result = await executor.ExecuteQueueAsync<object>("orders-manual", rawMessage);
 
         // Assert — function processed the order
         Assert.Single(OrderAzureServiceBusFunctions.ActionProcessedOrders);
@@ -266,7 +266,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             messageId: "manual-invalid-001");
 
         // Act
-        var result = await executor.ExecuteQueueAsync("orders-manual", rawMessage);
+        var result = await executor.ExecuteQueueAsync<object>("orders-manual", rawMessage);
 
         // Assert — function did NOT add to the processed list
         Assert.Empty(OrderAzureServiceBusFunctions.ActionProcessedOrders);
@@ -374,7 +374,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
                 body: BinaryData.FromObjectAsJson(order),
                 messageId: "env-001");
 
-            await executor.ExecuteQueueAsync(resolvedQueueName, rawMessage);
+            await executor.ExecuteQueueAsync<object>(resolvedQueueName, rawMessage);
 
             Assert.Single(OrderAzureServiceBusFunctions.EnvQueueProcessedOrders);
             Assert.Equal(99, OrderAzureServiceBusFunctions.EnvQueueProcessedOrders[0].OrderId);
@@ -403,7 +403,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             messageId: "env-missing-001");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => executor.ExecuteQueueAsync("env-test-queue", rawMessage));
+            () => executor.ExecuteQueueAsync<object>("env-test-queue", rawMessage));
     }
 
     // ── Direct ServiceBusReceivedMessage overloads ────────────────────────────
@@ -422,7 +422,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
         var executor = _factory.CreateAzureServiceBusFunctionExecutor();
 
-        await executor.ExecuteTopicAsync("events", rawMessage, subscriptionName: "integration-tests-sub");
+        await executor.ExecuteTopicAsync<object>("events", rawMessage, subscriptionName: "integration-tests-sub");
 
         Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
         Assert.Equal("event.shipped", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
@@ -442,7 +442,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
         var executor = _factory.CreateAzureServiceBusFunctionExecutor();
 
-        await executor.ExecuteTopicAsync("events", rawMessage);
+        await executor.ExecuteTopicAsync<object>("events", rawMessage);
 
         Assert.Single(OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects);
         Assert.Equal("event.broadcast", OrderAzureServiceBusFunctions.ProcessedIntegrationSubjects[0]);
@@ -472,7 +472,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
         var executor = _factory.CreateAzureServiceBusFunctionExecutor();
 
         // Act
-        var result = await executor.ExecuteBatchQueueAsync("batch-orders", messages);
+        var result = await executor.ExecuteBatchQueueAsync<object>("batch-orders", messages);
 
         // Assert — function received both pre-built messages verbatim
         Assert.Equal(2, OrderAzureServiceBusFunctions.BatchReceivedMessages.Count);
@@ -498,7 +498,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
 
         // The "events" topic subscriptions are not configured with IsBatched = true
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => executor.ExecuteBatchTopicAsync("events", messages,
+            () => executor.ExecuteBatchTopicAsync<object>("events", messages,
                 subscriptionName: "integration-tests-sub"));
     }
 
@@ -525,7 +525,7 @@ public class AzureServiceBusIntegrationTests : IClassFixture<FunctionAppFactory<
             correlationId: "corr-props-001");
 
         var executor = _factory.CreateAzureServiceBusFunctionExecutor();
-        var result = await executor.ExecuteQueueAsync("orders-manual", rawMessage);
+        var result = await executor.ExecuteQueueAsync<object>("orders-manual", rawMessage);
 
         // The function deserialised the body and processed the order
         Assert.Single(OrderAzureServiceBusFunctions.ActionProcessedOrders);

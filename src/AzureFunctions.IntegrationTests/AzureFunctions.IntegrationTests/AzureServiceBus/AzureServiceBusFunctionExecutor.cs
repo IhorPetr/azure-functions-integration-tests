@@ -58,13 +58,17 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
     /// Use this overload when you need full control over message metadata (headers, subject,
     /// message-id, correlation-id, etc.).
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="queueName">Queue name configured on the trigger.</param>
     /// <param name="message">The pre-built message to pass directly to the function.</param>
     /// <returns>
-    /// An <see cref="AzureServiceBusExecutionResult"/> containing the function's return value (if any)
+    /// An <see cref="AzureServiceBusExecutionResult{T}"/> containing the strongly-typed return value
     /// and the recorded message actions for assertion.
     /// </returns>
-    public async Task<AzureServiceBusExecutionResult> ExecuteQueueAsync(
+    public async Task<AzureServiceBusExecutionResult<T>> ExecuteQueueAsync<T>(
         string queueName,
         ServiceBusReceivedMessage message)
     {
@@ -75,7 +79,7 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
                 $"Available queues: {string.Join(", ", _queues.Keys)}");
         }
 
-        return await ServiceBusMessageBuilder.ExecuteAsync(info, message, null, _serviceProvider);
+        return await ServiceBusMessageBuilder.ExecuteAsync<T>(info, message, null, _serviceProvider);
     }
     
     
@@ -87,9 +91,13 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
     /// pre-built <see cref="ServiceBusReceivedMessage"/> instances.
     /// Use this overload when you need full control over individual message metadata.
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="queueName">Queue name configured on the trigger.</param>
     /// <param name="messages">The pre-built messages to pass directly to the function.</param>
-    public async Task<AzureServiceBusExecutionResult> ExecuteBatchQueueAsync(
+    public async Task<AzureServiceBusExecutionResult<T>> ExecuteBatchQueueAsync<T>(
         string queueName,
         ServiceBusReceivedMessage[] messages)
     {
@@ -107,7 +115,7 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
                 "Use ExecuteQueueAsync for single-message execution.");
         }
 
-        return await ServiceBusMessageBuilder.ExecuteAsync(info, messages[0], messages, _serviceProvider);
+        return await ServiceBusMessageBuilder.ExecuteAsync<T>(info, messages[0], messages, _serviceProvider);
     }
 
     // ── Topic execution ───────────────────────────────────────────────────────
@@ -117,6 +125,10 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
     /// pre-built <see cref="ServiceBusReceivedMessage"/>.
     /// Use this overload when you need full control over message metadata.
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="topicName">Topic name configured on the trigger.</param>
     /// <param name="message">The pre-built message to pass directly to the function.</param>
     /// <param name="subscriptionName">
@@ -133,9 +145,9 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
     /// </list>
     /// </param>
     /// <returns>
-    /// An <see cref="AzureServiceBusExecutionResult"/> from the last matching subscription executed.
+    /// An <see cref="AzureServiceBusExecutionResult{T}"/> from the last matching subscription executed.
     /// </returns>
-    public async Task<AzureServiceBusExecutionResult> ExecuteTopicAsync(
+    public async Task<AzureServiceBusExecutionResult<T>> ExecuteTopicAsync<T>(
         string topicName,
         ServiceBusReceivedMessage message,
         string? subscriptionName = null)
@@ -165,9 +177,9 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
             targets = [match];
         }
 
-        AzureServiceBusExecutionResult? lastResult = null;
+        AzureServiceBusExecutionResult<T>? lastResult = null;
         foreach (var target in targets)
-            lastResult = await ServiceBusMessageBuilder.ExecuteAsync(target, message, null, _serviceProvider);
+            lastResult = await ServiceBusMessageBuilder.ExecuteAsync<T>(target, message, null, _serviceProvider);
 
         return lastResult!;
     }
@@ -179,10 +191,14 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
     /// pre-built <see cref="ServiceBusReceivedMessage"/> instances.
     /// Use this overload when you need full control over individual message metadata.
     /// </summary>
+    /// <typeparam name="T">
+    /// Expected return type of the function (output binding).
+    /// Use <c>object</c> when the function does not return a meaningful value.
+    /// </typeparam>
     /// <param name="topicName">Topic name configured on the trigger.</param>
     /// <param name="messages">The pre-built messages to pass directly to the function.</param>
     /// <param name="subscriptionName">Optional subscription filter.</param>
-    public async Task<AzureServiceBusExecutionResult> ExecuteBatchTopicAsync(
+    public async Task<AzureServiceBusExecutionResult<T>> ExecuteBatchTopicAsync<T>(
         string topicName,
         ServiceBusReceivedMessage[] messages,
         string? subscriptionName = null)
@@ -211,7 +227,7 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
             targets = [match];
         }
 
-        AzureServiceBusExecutionResult? lastResult = null;
+        AzureServiceBusExecutionResult<T>? lastResult = null;
         foreach (var target in targets)
         {
             if (!target.IsBatched)
@@ -219,7 +235,7 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
                 throw new InvalidOperationException(
                     $"Topic function '{target.FunctionName}' is not configured for batched processing.");
             }
-            lastResult = await ServiceBusMessageBuilder.ExecuteAsync(target, messages[0], messages, _serviceProvider);
+            lastResult = await ServiceBusMessageBuilder.ExecuteAsync<T>(target, messages[0], messages, _serviceProvider);
         }
 
         return lastResult!;
@@ -232,7 +248,7 @@ internal sealed class AzureServiceBusFunctionExecutor : IAzureServiceBusFunction
 /// </summary>
 internal static class ServiceBusMessageBuilder
 {
-    internal static async Task<AzureServiceBusExecutionResult> ExecuteAsync(
+    internal static async Task<AzureServiceBusExecutionResult<T>> ExecuteAsync<T>(
         AzureServiceBusFunctionInfo functionInfo,
         ServiceBusReceivedMessage message,
         ServiceBusReceivedMessage[]? batchMessages,
@@ -254,21 +270,25 @@ internal static class ServiceBusMessageBuilder
             functionInfo, message, batchMessages, messageActions, sessionActions, context);
 
         var result = functionInfo.Method.Invoke(instance, parameters);
-        object? returnValue = null;
+        T? returnValue = default;
 
         if (result is Task task)
         {
             await task;
             var resultProp = task.GetType().GetProperty("Result");
             if (resultProp != null && resultProp.PropertyType != typeof(void))
-                returnValue = resultProp.GetValue(task);
+            {
+                var rawValue = resultProp.GetValue(task);
+                if (rawValue is T typed)
+                    returnValue = typed;
+            }
         }
-        else
+        else if (result is T directlyTyped)
         {
-            returnValue = result;
+            returnValue = directlyTyped;
         }
 
-        return new AzureServiceBusExecutionResult
+        return new AzureServiceBusExecutionResult<T>
         {
             ReturnValue = returnValue,
             MessageActions = messageActions,
