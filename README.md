@@ -288,6 +288,8 @@ public async Task GetOrder_WithRouteParameters_ReturnsOk()
 - ✅ Direct `ServiceBusReceivedMessage` pass-through (full metadata control)
 - ✅ Environment-variable queue/topic name resolution (`%VariableName%` syntax)
 - ✅ Non-generic execute overloads (no type argument needed when return value is irrelevant)
+- ✅ Durable Functions — activity and orchestrator execution in-process (`IDurableFunctionExecutor`)
+- ✅ Timer triggers — fire on schedule or past-due in-process (`ITimerFunctionExecutor`)
 
 ## Azure Service Bus Testing
 
@@ -484,8 +486,150 @@ await executor.ExecuteQueueAsync("my-test-queue", message);
 ## Limitations
 
 - Does not test the actual HTTP binding (e.g., authentication middleware at the HTTP level)
-- Timer, Blob, Event Hub, and other non-HTTP / non-Azure-Service-Bus trigger types are not yet supported
+- Timer, Blob, Event Hub, and other non-HTTP / non-Azure-Service-Bus / non-Durable trigger types are not yet supported
 - `ExecuteBatchTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
+- Durable `WaitForExternalEvent` and `CallSubOrchestratorAsync` are not supported in mock context
+
+## Durable Functions Testing
+
+Use `CreateDurableFunctionExecutor()` to execute Durable Functions orchestrators and activities
+in-process without a live Durable Task hub.
+
+### Activity execution
+
+```csharp
+public class OrderDurableTests : IClassFixture<FunctionAppFactory<Program>>
+{
+    private readonly FunctionAppFactory<Program> _factory;
+
+    public OrderDurableTests(FunctionAppFactory<Program> factory) => _factory = factory;
+
+    [Fact]
+    public async Task ProcessOrderActivity_ValidOrder_ReturnsTrue()
+    {
+        var executor = _factory.CreateDurableFunctionExecutor();
+        var order = new OrderPayload(OrderId: 1, CustomerEmail: "alice@example.com", Amount: 99.99m);
+
+        // Typed input + typed output
+        var result = await executor.ExecuteActivityAsync<OrderPayload, bool>(
+            "ProcessOrderActivity", order);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task SendConfirmationActivity_RecordsEmail()
+    {
+        var executor = _factory.CreateDurableFunctionExecutor();
+
+        // void activity — fire-and-forget
+        await executor.ExecuteActivityAsync<string>("SendConfirmationActivity", "alice@example.com");
+
+        Assert.Single(OrderDurableFunctions.SentEmails);
+    }
+}
+```
+
+### Orchestrator execution
+
+Use `MockTaskOrchestrationContext` to configure what each activity call should return, then pass
+it to `ExecuteOrchestratorAsync`. Chain `MockActivity` calls fluently before invoking the orchestrator.
+
+```csharp
+[Fact]
+public async Task ProcessOrderOrchestrator_ValidOrder_ReturnsTrueAndSendsEmail()
+{
+    var executor = _factory.CreateDurableFunctionExecutor();
+    var order = new OrderPayload(OrderId: 42, CustomerEmail: "dave@example.com", Amount: 150m);
+
+    var context = new MockTaskOrchestrationContext(input: order)
+        // Mock a typed-return activity
+        .MockActivity<OrderPayload, bool>("ProcessOrderActivity", _ => true)
+        // Mock a void activity using the Action overload
+        .MockActivity<string>("SendConfirmationActivity", _ => { });
+
+    var result = await executor.ExecuteOrchestratorAsync<bool>(
+        "ProcessOrderOrchestrator", context);
+
+    Assert.True(result);
+}
+```
+
+### MockActivity overloads
+
+| Overload | Use case |
+|---|---|
+| `MockActivity<TInput, TResult>(name, Func<TInput?, TResult>)` | Activity with typed input and return value |
+| `MockActivity<TResult>(name, TResult)` | Activity that always returns a fixed value |
+| `MockActivity<TInput>(name, Action<TInput?>)` | Void / fire-and-forget activity (no return value) |
+| `MockActivity<TInput, TResult>(name, Func<TInput?, Task<TResult>>)` | Async activity handler |
+
+### Asserting orchestrator state
+
+```csharp
+// CustomStatus set via context.SetCustomStatus(...)
+Assert.Equal("processing", context.CustomStatus);
+
+// Unmocked activity throws with a descriptive message
+await Assert.ThrowsAsync<InvalidOperationException>(
+    () => executor.ExecuteOrchestratorAsync<bool>("MyOrchestrator", emptyContext));
+```
+
+### Untyped input (JSON round-trip)
+
+```csharp
+// The executor JSON-round-trips anonymous objects to the activity's parameter type
+var raw = new { orderId = 5, customerEmail = "carol@example.com", amount = 50.0m };
+var result = await executor.ExecuteActivityAsync<bool>("ProcessOrderActivity", raw);
+```
+
+## Timer Function Testing
+
+Use `CreateTimerFunctionExecutor()` to fire timer-triggered functions in-process without a
+live timer scheduler.
+
+```csharp
+public class CleanupTimerTests : IClassFixture<FunctionAppFactory<Program>>
+{
+    private readonly FunctionAppFactory<Program> _factory;
+
+    public CleanupTimerTests(FunctionAppFactory<Program> factory) => _factory = factory;
+
+    [Fact]
+    public async Task DailyCleanup_OnSchedule_Executes()
+    {
+        var executor = _factory.CreateTimerFunctionExecutor();
+
+        var result = await executor.FireAsync("DailyCleanup");
+
+        Assert.Equal(1, CleanupTimerFunctions.CleanupRunCount);
+        Assert.False(result.TimerInfo.IsPastDue);
+    }
+
+    [Fact]
+    public async Task DailyCleanup_WhenPastDue_FunctionReceivesPastDueTrue()
+    {
+        var executor = _factory.CreateTimerFunctionExecutor();
+
+        var result = await executor.FireAsync("DailyCleanup", isPastDue: true);
+
+        Assert.True(result.TimerInfo.IsPastDue);
+        Assert.True(CleanupTimerFunctions.LastRunWasPastDue);
+    }
+}
+```
+
+### TimerFunctionExecutionResult
+
+| Property | Description |
+|---|---|
+| `TimerInfo` | The `TimerInfo` instance passed to the function, including `IsPastDue` and `ScheduleStatus` |
+
+```csharp
+var result = await executor.FireAsync("DailyCleanup");
+Assert.NotNull(result.TimerInfo.ScheduleStatus);
+Assert.True(result.TimerInfo.ScheduleStatus.Next > result.TimerInfo.ScheduleStatus.Last);
+```
 
 ## Example Project Structure
 
