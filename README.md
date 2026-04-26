@@ -288,7 +288,7 @@ public async Task GetOrder_WithRouteParameters_ReturnsOk()
 - ✅ Direct `ServiceBusReceivedMessage` pass-through (full metadata control)
 - ✅ Environment-variable queue/topic name resolution (`%VariableName%` syntax)
 - ✅ Non-generic execute overloads (no type argument needed when return value is irrelevant)
-- ✅ Durable Functions — activity and orchestrator execution in-process (`IDurableFunctionExecutor`)
+- ✅ Durable Functions — activity, orchestrator, and sub-orchestrator execution in-process (`IDurableFunctionExecutor`)
 - ✅ Timer triggers — fire on schedule or past-due in-process (`ITimerFunctionExecutor`)
 
 ## Azure Service Bus Testing
@@ -558,6 +558,32 @@ public async Task ProcessOrderOrchestrator_ValidOrder_ReturnsTrueAndSendsEmail()
 | `MockActivity<TInput>(name, Action<TInput?>)` | Void / fire-and-forget activity (no return value) |
 | `MockActivity<TInput, TResult>(name, Func<TInput?, Task<TResult>>)` | Async activity handler |
 
+### Sub-orchestrator execution
+
+Use `MockSubOrchestrator` to configure what `CallSubOrchestratorAsync` returns without
+actually invoking the nested orchestrator:
+
+```csharp
+var context = new MockTaskOrchestrationContext(new OrderInput { OrderId = 1 })
+    .MockSubOrchestrator<OrderInput, bool>("ValidateOrderOrchestrator", input => input!.OrderId > 0)
+    .MockSubOrchestrator<ShipmentResult>("ShipOrderOrchestrator", new ShipmentResult { Shipped = true });
+
+var result = await executor.ExecuteOrchestratorAsync<string>("ProcessOrderOrchestrator", context);
+Assert.Equal("done", result);
+```
+
+An unmocked sub-orchestrator throws `InvalidOperationException` with a descriptive message
+pointing to the missing `MockSubOrchestrator` call.
+
+### MockSubOrchestrator overloads
+
+| Overload | Use case |
+|---|---|
+| `MockSubOrchestrator<TInput, TResult>(name, Func<TInput?, TResult>)` | Sub-orchestrator with typed input and return value |
+| `MockSubOrchestrator<TResult>(name, TResult)` | Sub-orchestrator that always returns a fixed value |
+| `MockSubOrchestrator<TInput>(name, Action<TInput?>)` | Void sub-orchestrator (no return value) |
+| `MockSubOrchestrator<TInput, TResult>(name, Func<TInput?, Task<TResult>>)` | Async sub-orchestrator handler |
+
 ### Asserting orchestrator state
 
 ```csharp
@@ -630,7 +656,7 @@ Assert.True(result.TimerInfo.ScheduleStatus.Next > result.TimerInfo.ScheduleStat
 - Does not test the actual HTTP binding (e.g., authentication middleware at the HTTP level)
 - Timer, Blob, Event Hub, and other non-HTTP / non-Azure-Service-Bus / non-Durable trigger types are not yet supported
 - `ExecuteBatchTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
-- Durable `WaitForExternalEvent` and `CallSubOrchestratorAsync` are not supported in mock context
+- Durable `WaitForExternalEvent` is not supported in mock context
 
 ## Example Project Structure
 

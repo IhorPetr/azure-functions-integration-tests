@@ -16,6 +16,8 @@ public class MockTaskOrchestrationContext : TaskOrchestrationContext
     private readonly object? _input;
     private readonly Dictionary<string, Func<object?, Task<object?>>> _activityHandlers =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Func<object?, Task<object?>>> _subOrchestratorHandlers =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -126,6 +128,81 @@ public class MockTaskOrchestrationContext : TaskOrchestrationContext
         return this;
     }
 
+    // ── MockSubOrchestrator overloads ─────────────────────────────────────────
+
+    /// <summary>
+    /// Configures a mock for a sub-orchestrator that performs a side-effect but does not
+    /// return a meaningful value.
+    /// </summary>
+    /// <typeparam name="TInput">The sub-orchestrator's input type.</typeparam>
+    /// <param name="orchestratorName">The sub-orchestrator function name (case-insensitive).</param>
+    /// <param name="action">An action that receives the sub-orchestrator input.</param>
+    /// <returns>This instance to allow fluent chaining.</returns>
+    public MockTaskOrchestrationContext MockSubOrchestrator<TInput>(string orchestratorName, Action<TInput?> action)
+    {
+        _subOrchestratorHandlers[orchestratorName] = input =>
+        {
+            var typed = ConvertValue<TInput>(input);
+            action(typed);
+            return Task.FromResult<object?>(null);
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Configures a mock for a sub-orchestrator that always returns the same fixed value.
+    /// </summary>
+    /// <typeparam name="TResult">The sub-orchestrator's return type.</typeparam>
+    /// <param name="orchestratorName">The sub-orchestrator function name (case-insensitive).</param>
+    /// <param name="result">The value to return whenever the orchestrator calls this sub-orchestrator.</param>
+    /// <returns>This instance to allow fluent chaining.</returns>
+    public MockTaskOrchestrationContext MockSubOrchestrator<TResult>(string orchestratorName, TResult result)
+    {
+        _subOrchestratorHandlers[orchestratorName] = _ => Task.FromResult<object?>(result);
+        return this;
+    }
+
+    /// <summary>
+    /// Configures a mock for a sub-orchestrator whose return value depends on the input.
+    /// </summary>
+    /// <typeparam name="TInput">The sub-orchestrator's input type.</typeparam>
+    /// <typeparam name="TResult">The sub-orchestrator's return type.</typeparam>
+    /// <param name="orchestratorName">The sub-orchestrator function name (case-insensitive).</param>
+    /// <param name="handler">A synchronous function that receives the input and returns the result.</param>
+    /// <returns>This instance to allow fluent chaining.</returns>
+    public MockTaskOrchestrationContext MockSubOrchestrator<TInput, TResult>(
+        string orchestratorName,
+        Func<TInput?, TResult> handler)
+    {
+        _subOrchestratorHandlers[orchestratorName] = input =>
+        {
+            var typed = ConvertValue<TInput>(input);
+            return Task.FromResult<object?>(handler(typed));
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Configures a mock for a sub-orchestrator using an async handler whose return value
+    /// depends on the input.
+    /// </summary>
+    /// <typeparam name="TInput">The sub-orchestrator's input type.</typeparam>
+    /// <typeparam name="TResult">The sub-orchestrator's return type.</typeparam>
+    /// <param name="orchestratorName">The sub-orchestrator function name (case-insensitive).</param>
+    /// <param name="handler">An async function that receives the input and returns the result.</param>
+    /// <returns>This instance to allow fluent chaining.</returns>
+    public MockTaskOrchestrationContext MockSubOrchestrator<TInput, TResult>(
+        string orchestratorName,
+        Func<TInput?, Task<TResult>> handler)
+    {
+        _subOrchestratorHandlers[orchestratorName] = async input =>
+        {
+            var typed = ConvertValue<TInput>(input);
+            return (object?)await handler(typed);
+        };
+        return this;
+    }
+
     // ── Abstract overrides ────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -183,10 +260,20 @@ public class MockTaskOrchestrationContext : TaskOrchestrationContext
     public override void SetCustomStatus(object? customStatus) => CustomStatus = customStatus;
 
     /// <inheritdoc/>
-    public override Task<TResult> CallSubOrchestratorAsync<TResult>(
+    public override async Task<TResult> CallSubOrchestratorAsync<TResult>(
         TaskName orchestratorName, object? input = null, TaskOptions? options = null)
-        => throw new NotSupportedException(
-            $"'{nameof(CallSubOrchestratorAsync)}' is not supported in integration tests.");
+    {
+        if (!_subOrchestratorHandlers.TryGetValue(orchestratorName.Name, out var handler))
+        {
+            throw new InvalidOperationException(
+                $"No mock configured for sub-orchestrator '{orchestratorName.Name}'. " +
+                $"Call MockSubOrchestrator(\"{orchestratorName.Name}\", ...) on the {nameof(MockTaskOrchestrationContext)} " +
+                $"before invoking the orchestrator.");
+        }
+
+        var raw = await handler(input);
+        return ConvertValue<TResult>(raw)!;
+    }
 
     /// <inheritdoc/>
     public override void ContinueAsNew(object? newInput = null, bool preserveUnprocessedEvents = true) { }
