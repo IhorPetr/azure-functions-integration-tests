@@ -14,6 +14,8 @@ A testing library for Azure Functions v4 (isolated worker process model) that pr
 - ⚙️ **Customizable** - Virtual methods to override host configuration
 - 🔄 **HttpClient integration** - Use familiar HttpClient for testing
 - 📨 **Azure Service Bus integration** - Execute queue/topic-triggered functions without a real Azure Service Bus namespace
+- ⏱️ **Timer trigger support** - Fire timer-triggered functions in-process with `ITimerFunctionExecutor`, with control over `IsPastDue`
+- 🔗 **Durable Functions support** - Execute activities, orchestrators, and sub-orchestrators in-process with `IDurableFunctionExecutor` using configurable mocks
 
 ## Installation
 
