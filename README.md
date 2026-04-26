@@ -483,12 +483,6 @@ var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
 await executor.ExecuteQueueAsync("my-test-queue", message);
 ```
 
-## Limitations
-
-- Does not test the actual HTTP binding (e.g., authentication middleware at the HTTP level)
-- Timer, Blob, Event Hub, and other non-HTTP / non-Azure-Service-Bus / non-Durable trigger types are not yet supported
-- `ExecuteBatchTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
-- Durable `WaitForExternalEvent` and `CallSubOrchestratorAsync` are not supported in mock context
 
 ## Durable Functions Testing
 
@@ -630,6 +624,13 @@ var result = await executor.FireAsync("DailyCleanup");
 Assert.NotNull(result.TimerInfo.ScheduleStatus);
 Assert.True(result.TimerInfo.ScheduleStatus.Next > result.TimerInfo.ScheduleStatus.Last);
 ```
+
+## Limitations
+
+- Does not test the actual HTTP binding (e.g., authentication middleware at the HTTP level)
+- Timer, Blob, Event Hub, and other non-HTTP / non-Azure-Service-Bus / non-Durable trigger types are not yet supported
+- `ExecuteBatchTopicAsync` requires every matching subscription function to be configured with `IsBatched = true`
+- Durable `WaitForExternalEvent` and `CallSubOrchestratorAsync` are not supported in mock context
 
 ## Example Project Structure
 
